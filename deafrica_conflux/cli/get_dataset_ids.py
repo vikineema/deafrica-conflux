@@ -10,7 +10,6 @@ from odc.stats.model import DateTimeRange
 from deafrica_conflux.cli.logs import logging_setup
 from deafrica_conflux.hopper import check_ds_region, find_datasets
 from deafrica_conflux.io import check_dir_exists, check_if_s3_uri, find_parquet_files
-from deafrica_conflux.queues import batch_messages
 
 
 @click.command(
