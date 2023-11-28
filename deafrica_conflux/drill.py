@@ -6,8 +6,8 @@ Geoscience Australia
 2021
 """
 
-import datetime
 import logging
+import os
 import warnings
 from types import ModuleType
 
@@ -17,8 +17,8 @@ import numpy as np
 import pandas as pd
 import shapely.geometry
 from datacube.model import Dataset
+from datacube.testutils.io import rio_slurp_xarray
 from datacube.utils.geometry import Geometry
-from deafrica_tools.spatial import xr_rasterize
 from skimage.measure import regionprops
 
 _log = logging.getLogger(__name__)
@@ -279,10 +279,8 @@ def remove_duplicate_datasets(required_datasets: list[Dataset]) -> list[Dataset]
 
 def drill(
     plugin: ModuleType,
-    polygons_gdf: gpd.GeoDataFrame,
     reference_dataset: Dataset,
-    partial=True,
-    overedge=True,
+    polygons_split_by_region_directory: str,
     dc: datacube.Datacube | None = None,
 ) -> pd.DataFrame:
     """
@@ -293,46 +291,23 @@ def drill(
     plugin : module
         A validated plugin to drill with.
 
-    polygons_gdf : GeoDataFrame
-        A GeoDataFrame with the ID (column containing the polygons ids) as the index.
+    polygons_split_by_region_directory : str
+        Directory containing the rasters for the polygons split by wofs_ls regions.
 
     reference_dataset : Dataset
         Refernce dataset to process.
 
-    partial : bool
-        Optional (defaults to True). Whether to include polygons that partially
-        overlap with the scene. If partial is True, polygons that partially
-        overlap with the scene are included. If partial is False, polygons that
-        partially overlap with the scene are excluded from the drill, and going
-        off the edge of the scene will exclude the entire polygon. Describes
-        what happens to the polygon, not what happens to the data. Interacts
-        with overedge, which describes what happens to the overedge data.
-
-    overedge : bool
-        Optional (defaults to False). Whether to include data from other scenes
-        in partially overedge polygons. If overedge is False, data from other
-        scenes is not included in results. If overedge is True, data from other
-        scenes is included in results. Interacts with partial.
-
     dc : datacube.Datacube
         Optional existing Datacube.
 
-    time_buffer : datetime.timedelta
-        Optional (default 1 hour). Only consider datasets within
-        this time range for overedge.
-
     Returns
     -------
-    Drill table : pd.DataFrame
+    Drill table : pd.DataFram   time_buffer : datetime.timedelta
+        Optional (default 1 hour). Only consider datasets within
+        this time range for overedge.e
         Index = polygon ID
         Columns = output bands
     """
-
-    # Validate partial and overedge parameters.
-    if not partial:
-        if overedge:
-            _log.error("overedge=True expects partial=True")
-            raise ValueError("overedge=True expects partial=True")
 
     # TODO: Generalize to work with multiple products and
     # products with multiple measurements.
@@ -362,104 +337,33 @@ def drill(
     else:
         resampling = "nearest"
 
-    # Reproject the polygons to the required CRS.
-    polygons_gdf = polygons_gdf.to_crs(output_crs)
+    # Get the region code for the dataset.
+    region_code = reference_dataset.metadata.region_code
 
-    # Filter the polygons based on the partial and overedge parameter.
-    if partial:
-        # Include polygons that partially overlap with the scene.
-        # i.e. only  include polygons that intersect with the dataset extent.
-        filtered_polygons_gdf = get_polygons_intersecting_ds_extent(polygons_gdf, reference_dataset)
-        _log.info(
-            f"Filtered out {len(polygons_gdf) - len(filtered_polygons_gdf)} polygons out of {len(polygons_gdf)} polygons."
-        )
-        if overedge:
-            # If overedge, remove anything which intersects with a 3-scene
-            # width box.
-            n = len(filtered_polygons_gdf)
-            filtered_polygons_gdf = filter_large_polygons(filtered_polygons_gdf, reference_dataset)
-            _log.info(
-                f"Overedge filter removed {n - len(filtered_polygons_gdf)} polygons larger than 3 scenes in width and height out of {n} polygons."
-            )
-    else:
-        # Do not include polygons that partially overlap with the scene.
-        # i.e. only include polygons within the dataset extent.
-        filtered_polygons_gdf = get_polygons_within_ds_extent(polygons_gdf, reference_dataset)
-        _log.info(
-            f"Filtered out {len(polygons_gdf)- len(filtered_polygons_gdf)} polygons out of {len(polygons_gdf)} polygons."
-        )
+    # Load the reference scene.
+    reference_scene = dc.load(
+        datasets=[reference_dataset],
+        measurements=measurements,
+        output_crs=output_crs,
+        resolution=resolution,
+        resampling=resampling,
+    )
 
-    if len(filtered_polygons_gdf) == 0:
-        scene_uuid = str(reference_dataset.id)
-        _log.warning(f"No polygons found in scene {scene_uuid}")
-        return pd.DataFrame({})
+    # Load the enumerated waterbodies polygons raster for the region and reproject
+    # to match the reference scene.
+    polygons_raster_file_path = os.path.join(
+        polygons_split_by_region_directory, f"{region_code}.tif"
+    )
 
-    # Load the reference dataset.
-    if overedge:
-        # Search for all the datasets neighbouring our reference dataset that we need to cover
-        # the area of the polygons.
+    polygons_raster = rio_slurp_xarray(
+        fname=polygons_raster_file_path, gbox=reference_scene.geobox, resampling=resampling
+    )
 
-        # Get the bounding box for the polygons.
-        _log.debug("Getting bounding box for the polygons...")
-        geopolygon = Geometry(
-            geom=shapely.geometry.box(*filtered_polygons_gdf.total_bounds),
-            crs=filtered_polygons_gdf.crs,
-        )
-
-        # Get the time range to use for searching for datasets neighbouring our reference dataset.
-
-        # The 1 hour buffer ensures we are only finding neighbouring datasets on the same path.
-        time_buffer = datetime.timedelta(hours=1)
-
-        time_span = (
-            reference_dataset.center_time - time_buffer,
-            reference_dataset.center_time + time_buffer,
-        )
-        _log.debug(
-            f"Time range to use for searching for datasets neighbouring our reference dataset {time_span}."
-        )
-
-        _log.debug("Finding datasets covering the bounding box of the polygons...")
-        req_datasets = dc.find_datasets(
-            product=reference_product, geopolygon=geopolygon, time=time_span, ensure_location=True
-        )
-        _log.debug(
-            f"Found {len(req_datasets)} required datasets to cover all the polygons: {', '.join([str(dataset.id) for dataset in req_datasets])} ."
-        )
-
-        count = len(req_datasets)
-        req_datasets = remove_duplicate_datasets(req_datasets)
-        _log.debug(f"Removed {count - len(req_datasets)} duplicate datasets.")
-
-        _log.debug("Loading required datasets ...")
-        reference_scene = dc.load(
-            datasets=req_datasets,
-            measurements=measurements,
-            geopolygon=geopolygon,
-            time=time_span,
-            output_crs=output_crs,
-            resolution=resolution,
-            group_by="solar_day",
-            resampling=resampling,
-        )
-
-        _log.info(
-            f"Loaded the {len(req_datasets)} required datasets to cover all the polygons: {', '.join([str(dataset.id) for dataset in req_datasets])} ."
-        )
-
-    else:
-        # Load the reference scene.
-        reference_scene = dc.load(
-            datasets=[reference_dataset],
-            measurements=measurements,
-            output_crs=output_crs,
-            resolution=resolution,
-            resampling=resampling,
-        )
-
-        _log.info(f"Loaded the reference dataset {str(reference_dataset.id)} .")
-
-    _log.info(f"Reference scene is {reference_scene.sizes}")
+    # TODO: Take care of empty regions or other errors resulting in empty dataframes.
+    # if len(filtered_polygons_gdf) == 0:
+    #    scene_uuid = str(reference_dataset.id)
+    #    _log.warning(f"No polygons found in scene {scene_uuid}")
+    #    return pd.DataFrame({})
 
     # Transform the loaded data.
     # Force warnings to raise exceptions.
@@ -469,19 +373,9 @@ def drill(
         warnings.filterwarnings("error")
         ds_transformed = plugin.transform(ds)[measurement]
 
-    # Assign a one-indexed numeric column for the polygons.
-    # This will allow us to build a polygon enumerated raster.
-    attr_col = "_conflux_one_index"
-    # This mutates the (in-memory) polygons_gdf, but that's OK.
-    filtered_polygons_gdf[attr_col] = range(1, len(filtered_polygons_gdf.index) + 1)
-    conflux_one_index_to_id = {v: k for k, v in filtered_polygons_gdf[attr_col].to_dict().items()}
-
-    # Build the enumerated polygon raster.
-    polygon_raster = xr_rasterize(filtered_polygons_gdf, reference_scene, attr_col)
-
     # For each polygon, perform the summary.
     props = regionprops(
-        label_image=polygon_raster.values,
+        label_image=polygons_raster.values,
         intensity_image=ds_transformed.values,
         extra_properties=(plugin.summarise,),
     )
@@ -489,33 +383,9 @@ def drill(
     summary_df_list = []
     for region_prop in props:
         polygon_summary_df = region_prop.summarise
-        polygon_index = conflux_one_index_to_id[region_prop.label]
-        polygon_summary_df.index = [polygon_index]
+        polygon_summary_df.index = [region_prop.label]
         summary_df_list.append(polygon_summary_df)
 
     summary_df = pd.concat(summary_df_list, ignore_index=False)
-
-    # Detect intersections.
-    # We only have to do this if partial and not overedge.
-    # If not partial, then there can't be any intersections.
-    # If overedge, then there are no partly observed polygons.
-    if partial and not overedge:
-        intersection_features = get_intersections(filtered_polygons_gdf, reference_scene.extent)
-        intersection_features.rename(
-            inplace=True,
-            columns={
-                "North": "conflux_n",
-                "South": "conflux_s",
-                "East": "conflux_e",
-                "West": "conflux_w",
-            },
-        )
-        # Merge in the edge information.
-        summary_df = summary_df.join(
-            # left join only includes objects with some
-            # representation in the scene
-            intersection_features,
-            how="left",
-        )
 
     return summary_df

@@ -5,13 +5,11 @@ from importlib import import_module
 import click
 import datacube
 import fsspec
-import geopandas as gpd
 from rasterio.errors import RasterioIOError
 
 from deafrica_conflux.cli.logs import logging_setup
 from deafrica_conflux.db import get_engine_waterbodies
 from deafrica_conflux.drill import drill
-from deafrica_conflux.id_field import guess_id_field
 from deafrica_conflux.io import (
     check_file_exists,
     check_if_s3_uri,
@@ -40,17 +38,11 @@ from deafrica_conflux.stack import stack_waterbodies_parquet_to_db
         deafrica_conflux/plugins/ directory.",
 )
 @click.option(
-    "--polygons-directory",
+    "--polygons-split-by-region-directory",
     type=str,
     # Don't mandate existence since this might be s3://.
-    help="Directory containing the parquet files for the polygons to perform the drill on \
+    help="Directory containing the raster files for the polygons to perform the drill on \
     split by product regions.",
-)
-@click.option(
-    "--use-id",
-    type=str,
-    default="",
-    help="Optional. Unique key id in polygons vector file.",
 )
 @click.option(
     "--output-directory",
@@ -58,16 +50,6 @@ from deafrica_conflux.stack import stack_waterbodies_parquet_to_db
     default=None,
     # Don't mandate existence since this might be s3://.
     help="REQUIRED. File URI or S3 URI to the output directory.",
-)
-@click.option(
-    "--partial/--no-partial",
-    default=True,
-    help="Include polygons that only partially intersect the scene.",
-)
-@click.option(
-    "--overedge/--no-overedge",
-    default=True,
-    help="Include data from over the scene boundary.",
 )
 @click.option(
     "--overwrite/--no-overwrite",
@@ -84,11 +66,8 @@ def run_from_txt(
     verbose,
     dataset_ids_file,
     plugin_name,
-    polygons_directory,
-    use_id,
+    polygons_split_by_region_directory,
     output_directory,
-    partial,
-    overedge,
     overwrite,
     db,
     dump_empty_dataframe,
@@ -98,7 +77,7 @@ def run_from_txt(
     """
     # "Support" pathlib Paths.
     dataset_ids_file = str(dataset_ids_file)
-    polygons_directory = str(polygons_directory)
+    polygons_split_by_region_directory = str(polygons_split_by_region_directory)
     output_directory = str(output_directory)
 
     # Set up logger.
@@ -145,9 +124,6 @@ def run_from_txt(
         # Load the dataset using the dataset id.
         reference_dataset = dc.index.datasets.get(dataset_id)
 
-        # Get the region code for the dataset.
-        region_code = reference_dataset.metadata.region_code
-
         # Get the center time for the dataset
         centre_time = reference_dataset.center_time
 
@@ -159,28 +135,11 @@ def run_from_txt(
 
         if overwrite or not exists:
             try:
-                # Load the water body polygons for the region
-                polygons_vector_file = os.path.join(polygons_directory, f"{region_code}.parquet")
-                try:
-                    polygons_gdf = gpd.read_parquet(polygons_vector_file)
-                except Exception as error:
-                    _log.exception(f"Could not read file {polygons_vector_file}")
-                    raise error
-                else:
-                    # Guess the ID field.
-                    id_field = guess_id_field(polygons_gdf, use_id)
-                    _log.debug(f"Guessed ID field: {id_field}")
-
-                    # Set the ID field as the index.
-                    polygons_gdf.set_index(id_field, inplace=True)
-
                 # Perform the polygon drill on the dataset
                 table = drill(
                     plugin=plugin,
-                    polygons_gdf=polygons_gdf,
                     reference_dataset=reference_dataset,
-                    partial=partial,
-                    overedge=overedge,
+                    polygons_split_by_region_directory=polygons_split_by_region_directory,
                     dc=dc,
                 )
 
