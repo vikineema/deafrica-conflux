@@ -25,6 +25,9 @@ PARQUET_EXTENSIONS = {".pq", ".parquet"}
 # File extensions to recognise as CSV files.
 CSV_EXTENSIONS = {".csv", ".CSV"}
 
+# File extensions to recognise as GeoTIFF files.
+GEOTIFF_EXTENSIONS = {".tif", ".tiff", ".gtiff"}
+
 # Metadata key for Parquet files.
 PARQUET_META_KEY = b"conflux.metadata"
 
@@ -376,7 +379,7 @@ def find_parquet_files(path: str | Path, pattern: str = ".*") -> [str]:
         # Find Parquet files on S3.
         file_system = fsspec.filesystem("s3")
     else:
-        # Find Parquet files localy.
+        # Find Parquet files locally.
         file_system = fsspec.filesystem("file")
 
     pq_file_paths = []
@@ -426,7 +429,7 @@ def find_csv_files(path: str | Path, pattern: str = ".*") -> [str]:
         # Find CSV files on S3.
         file_system = fsspec.filesystem("s3")
     else:
-        # Find CSV files localy.
+        # Find CSV files locally.
         file_system = fsspec.filesystem("file")
 
     csv_file_paths = []
@@ -448,3 +451,54 @@ def find_csv_files(path: str | Path, pattern: str = ".*") -> [str]:
 
     _log.info(f"Found {len(csv_file_paths)} csv files.")
     return csv_file_paths
+
+
+def find_geotiff_files(path: str | Path, pattern: str = ".*") -> [str]:
+    """
+    Find GeoTIFF files matching a pattern.
+
+    Arguments
+    ---------
+    path : str | Path
+        Path (s3 or local) to search for GeoTIFF files.
+
+    pattern : str
+        Regex to match file names against.
+
+    Returns
+    -------
+    [str]
+        List of paths.
+    """
+    pattern = re.compile(pattern)
+
+    # "Support" pathlib Paths.
+    path = str(path)
+
+    if check_if_s3_uri(path):
+        # Find GeoTIFF files on S3.
+        file_system = fsspec.filesystem("s3")
+    else:
+        # Find GeoTIFF files locally.
+        file_system = fsspec.filesystem("file")
+
+    geotiff_file_paths = []
+
+    files = file_system.find(path)
+    for file in files:
+        _, file_extension = os.path.splitext(file)
+        file_extension = file_extension.lower()
+        if file_extension not in GEOTIFF_EXTENSIONS:
+            continue
+        else:
+            _, file_name = os.path.split(file)
+            if not pattern.match(file_name):
+                continue
+            else:
+                geotiff_file_paths.append(file)
+
+    if check_if_s3_uri(path):
+        geotiff_file_paths = [f"s3://{file}" for file in geotiff_file_paths]
+
+    _log.info(f"Found {len(geotiff_file_paths)} GeoTIFF files.")
+    return geotiff_file_paths
