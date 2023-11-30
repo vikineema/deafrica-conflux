@@ -43,6 +43,9 @@ def get_intersecting_polygons_ids(
             polygons_gdf, region, how="inner", predicate="intersects"
         )[id_field].to_list()
 
+    # Get the unique values.
+    intersecting_polygons_ids = list(set(intersecting_polygons_ids))
+
     return intersecting_polygons_ids
 
 
