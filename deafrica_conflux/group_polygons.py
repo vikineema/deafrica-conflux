@@ -26,6 +26,11 @@ def get_intersecting_polygons_ids(
     list
         A list of the ids of the polygons that intersect with the region.
     """
+    if region.crs != polygons_gdf.crs:
+        region = region.to_crs(polygons_gdf.crs)
+
+    assert region.crs == polygons_gdf.crs
+
     if not use_id:
         intersecting_polygons_ids = gpd.sjoin(
             polygons_gdf, region, how="inner", predicate="intersects"
