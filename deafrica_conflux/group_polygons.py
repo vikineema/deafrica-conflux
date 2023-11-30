@@ -39,3 +39,34 @@ def get_intersecting_polygons_ids(
         )[id_field].to_list()
 
     return intersecting_polygons_ids
+
+
+def get_intersecting_polygons(
+    region: gpd.GeoDataFrame, polygons_gdf: gpd.GeoDataFrame, use_id=""
+) -> gpd.GeoDataFrame:
+    """
+    Get the polygons that intersect with a region.
+
+    Parameters
+    ----------
+    region : gpd.GeoDataFrame
+        A GeoDataFrame of the region of interest.
+    polygons_gdf : gpd.GeoDataFrame
+        A set of polygons to filter by intersection with the region.
+    use_id : str
+        Column to use as the id field for the polygons to filter.
+    Returns
+    -------
+    gpd.GeoDataFrame
+        Polygons that intersect with the region.
+    """
+    intersecting_polygons_ids = get_intersecting_polygons_ids(
+        region=region, polygons_gdf=polygons_gdf, use_id=use_id
+    )
+
+    if not use_id:
+        intersecting_polygons = polygons_gdf[polygons_gdf.index.isin(intersecting_polygons_ids)]
+    else:
+        intersecting_polygons = polygons_gdf[polygons_gdf[use_id].isin(intersecting_polygons_ids)]
+
+    return intersecting_polygons
