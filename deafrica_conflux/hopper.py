@@ -6,6 +6,7 @@ Geoscience Australia
 """
 
 import logging
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Dict, Iterable
 
@@ -100,7 +101,17 @@ def check_ds_region(region_codes: list, ds: Dataset) -> str:
 
 
 # From https://github.com/opendatacube/odc-stats/blob/develop/odc/stats/tasks.py
-def update_start_end(x, out):
+def update_start_end(x: datetime, out: SimpleNamespace):
+    """
+    Add a start and end datetime to a CompressedDataset.
+
+    Parameters
+    ----------
+    x : datetime
+        Datetime or date range to use.
+    out : SimpleNamespace
+        An empty simplenamespace object to fill.
+    """
     if out.start is None:
         out.start = x
         out.end = x
@@ -110,7 +121,12 @@ def update_start_end(x, out):
 
 
 def persist(ds: Dataset) -> CompressedDataset:
+    """
+    Mapping function to use when binning a dataset stream.
+    """
+    # Convert the dataset to a CompressedDataset.
     _ds = compress_ds(ds)
+    # Add a start and end datetime to the CompressedDataset.
     update_start_end(_ds.time, dt_range)
     return _ds
 
@@ -120,7 +136,16 @@ def bin_solar_day(
 ) -> dict[tuple[str, int, int], list[CompressedDataset]]:
     """
     Bin by solar day.
-    :param cells: (x,y) -> Cell(dss: List[CompressedDataset], geobox: GeoBox, idx: Tuple[int, int])
+
+    Parameters
+    ----------
+    cells : dict[tuple[int, int], Cell]
+        Cells to bin.
+
+    Returns
+    -------
+    dict[tuple[str, int, int], list[CompressedDataset]]
+        Input cells with datasets binned by day.
     """
     tasks = {}
     for tidx, cell in cells.items():
