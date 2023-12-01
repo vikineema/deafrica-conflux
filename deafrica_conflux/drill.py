@@ -369,7 +369,7 @@ def drill(
 
     query["datasets"] = required_datasets
 
-    _log.info(f"Query object to use for loading data {json.dumps(query)}")
+    _log.info(f"Query object to use for loading data {query}")
 
     # Load the datasets.
     ds_ = dc.load(**query)
