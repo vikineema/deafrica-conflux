@@ -13,6 +13,7 @@ pandas
 pyarrow
 python-geohash
 rasterio
+rioxarray
 s3fs>=2023.9.1
 s3urls
 shapely

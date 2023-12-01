@@ -6,8 +6,8 @@ Geoscience Australia
 2021
 """
 
+import json
 import logging
-import os
 import warnings
 from types import ModuleType
 
@@ -15,11 +15,15 @@ import datacube
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import rioxarray
 import shapely.geometry
 from datacube.model import Dataset
-from datacube.testutils.io import rio_slurp_xarray
 from datacube.utils.geometry import Geometry
+from odc.dscache import DatasetCache
 from skimage.measure import regionprops
+
+from deafrica_conflux.io import find_geotiff_files
+from deafrica_conflux.text import task_id_to_tuple
 
 _log = logging.getLogger(__name__)
 
@@ -279,96 +283,105 @@ def remove_duplicate_datasets(required_datasets: list[Dataset]) -> list[Dataset]
 
 def drill(
     plugin: ModuleType,
-    reference_dataset: Dataset,
-    polygons_split_by_region_directory: str,
+    task_id_string: str,
+    cache: DatasetCache,
+    polygon_rasters_split_by_tile_directory: str,
     dc: datacube.Datacube | None = None,
 ) -> pd.DataFrame:
     """
     Perform a polygon drill.
 
-    Arguments
-    ---------
-    plugin : module
+    Parameters
+    ----------
+    plugin : ModuleType
         A validated plugin to drill with.
-
-    polygons_split_by_region_directory : str
-        Directory containing the rasters for the polygons split by wofs_ls regions.
-
-    reference_dataset : Dataset
-        Refernce dataset to process.
-
-    dc : datacube.Datacube
-        Optional existing Datacube.
+    task_id_string : str
+        Task id to run drill on in string format.
+    cache : DatasetCache
+        Dataset cache to read datasets from.
+    polygon_rasters_split_by_tile_directory : str
+        Directory to search for polygons raster files.
+    dc : datacube.Datacube | None, optional
+        Optional existing Datacube., by default None
 
     Returns
     -------
-    Drill table : pd.DataFram   time_buffer : datetime.timedelta
-        Optional (default 1 hour). Only consider datasets within
-        this time range for overedge.e
+    Drill table : pd.DataFrame
         Index = polygon ID
         Columns = output bands
     """
-
     # TODO: Generalize to work with multiple products and
     # products with multiple measurements.
 
-    # Check the plugin does not have multiple products to load.
-    # Using multiple products is not is not implemented.
-    if len(plugin.input_products.items()) > 1:
-        raise NotImplementedError("Expected one product in plugin")
+    # Check the plugin does not have multiple products/measurements to load.
+    # Using multiple products/measurements is not is not implemented.
+    measurements = plugin.measurements
+    if len(measurements) > 1:
+        raise NotImplementedError("Expected 1 measurement in plugin")
     else:
-        reference_product = reference_dataset.type.name
-        assert reference_product == list(plugin.input_products.keys())[0]
-        measurements = plugin.input_products[reference_product]
-        if len(measurements) > 1:
-            raise NotImplementedError("Expected 1 measurement in plugin")
-        else:
-            measurement = measurements[0]
+        measurement = measurements[0]
 
     # Get a datacube if we don't have one already.
     if dc is None:
         dc = datacube.Datacube(app="deafrica-conflux-drill")
 
-    # Get the output crs and resolution from the plugin.
-    output_crs = plugin.output_crs
-    resolution = plugin.resolution
+    # Get the gridspec/grid name from the cache.
+    grid = cache.get_info_dict("stats/config")["grid"]
+    _log.debug(f"Found grid {grid}")
+
+    # Parse the task id tuple from the task string.
+    task_id_tuple = task_id_to_tuple(task_id_string)
+
+    # Find the polygons raster tile to use for the task.
+    _log.info("Finding polygon raster tile....")
+    search_pattern = f".*x{task_id_tuple[1]:03d}_y{task_id_tuple[2]:03d}.*"
+    found_raster_tile = find_geotiff_files(
+        path=polygon_rasters_split_by_tile_directory, pattern=search_pattern
+    )
+    # The should only be one polygons raster file  for each tile.
+    assert len(found_raster_tile) == 1
+
+    # Load the enumerated waterbodies polygons raster tile.
+    polygons_raster = rioxarray.open_rasterio(found_raster_tile[0]).squeeze("band", drop=True)
+    _log.info(f"Loaded {found_raster_tile[0]}")
+    assert polygons_raster.geobox.crs == plugin.output_crs
+    assert polygons_raster.geobox.resolution == plugin.resolution
+
+    # Get the datasets for the task.
+    required_datasets = [ds for ds in cache.stream_grid_tile(task_id_tuple, grid)]
+
+    # Create a datacube query object to use to load the found datasets.
+    query = {}
+
     if hasattr(plugin, "resampling"):
-        resampling = plugin.resampling
+        query["resampling"] = plugin.resampling
     else:
-        resampling = "nearest"
+        query["resampling"] = "nearest"
 
-    # Get the region code for the dataset.
-    region_code = reference_dataset.metadata.region_code
+    if hasattr(plugin, "dask_chunks"):
+        query["dask_chunks"] = plugin.dask_chunks
 
-    # Load the reference scene.
-    reference_scene = dc.load(
-        datasets=[reference_dataset],
-        measurements=measurements,
-        output_crs=output_crs,
-        resolution=resolution,
-        resampling=resampling,
-    )
+    query["group_by"] = "solar_day"
 
-    # Load the enumerated waterbodies polygons raster for the region and reproject
-    # to match the reference scene.
-    polygons_raster_file_path = os.path.join(
-        polygons_split_by_region_directory, f"{region_code}.tif"
-    )
+    query["like"] = polygons_raster.geobox
 
-    polygons_raster = rio_slurp_xarray(
-        fname=polygons_raster_file_path, gbox=reference_scene.geobox, resampling=resampling
-    )
+    query["measurements"] = [measurement]
+
+    query["datasets"] = required_datasets
+
+    _log.info(f"Query object to use for loading data {json.dumps(query)}")
+
+    # Load the datasets.
+    ds_ = dc.load(**query)
 
     # TODO: Take care of empty regions or other errors resulting in empty dataframes.
     # if len(filtered_polygons_gdf) == 0:
-    #    scene_uuid = str(reference_dataset.id)
-    #    _log.warning(f"No polygons found in scene {scene_uuid}")
-    #    return pd.DataFrame({})
 
     # Transform the loaded data.
     # Force warnings to raise exceptions.
     # This means users have to explicitly ignore warnings.
-    ds = reference_scene.isel(time=0)
+    ds = ds_.isel(time=0)
+
     with warnings.catch_warnings():
         warnings.filterwarnings("error")
         ds_transformed = plugin.transform(ds)[measurement]
