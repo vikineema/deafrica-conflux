@@ -1,3 +1,5 @@
+"""Text formatting functions"""
+
 from datetime import datetime
 
 
@@ -32,7 +34,7 @@ def serialise_date(date: datetime) -> str:
     return date.strftime("%Y%m%d-%H%M%S-%f")
 
 
-def unserialise_date(date: str) -> datetime.datetime:
+def unserialise_date(date: str) -> datetime:
     """
     Unserialise a date.
 
@@ -47,7 +49,7 @@ def unserialise_date(date: str) -> datetime.datetime:
     return datetime.datetime.strptime(date, "%Y%m%d-%H%M%S-%f")
 
 
-def date_to_day_str(date: datetime.datetime) -> str:
+def date_to_day_str(date: datetime) -> str:
     """
     Serialise a date discarding hours/mins/seconds.
 
