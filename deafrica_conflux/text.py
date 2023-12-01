@@ -112,22 +112,51 @@ def parse_tile_ids(file_path: str) -> str:
     return tile_id
 
 
-def task_id_to_str(task_id_tuple: tuple) -> str:
+def task_id_to_string(task_id_tuple: tuple) -> str:
     """
     Transform a task id tuple to a string.
 
     Parameters
     ----------
     task_id_tuple : tuple
-        Task id in tuple format.
+        Task id as a tuple.
 
     Returns
     -------
     str
-        Task id in string format
+        Task id as string.
     """
-    period, xi, yi = task_id_tuple
+    period, x, y = task_id_tuple
 
-    task_id_str = f"{period}/{xi:02d}/{yi:02d}"
+    task_id_string = f"{period}/{x:02d}/{y:02d}"
 
-    return task_id_str
+    return task_id_string
+
+
+def task_id_to_tuple(task_id_string: str) -> tuple:
+    """
+    Transform a task id string to a tuple.
+
+    Parameters
+    ----------
+    task_id_string : str
+        Task id as string.
+
+    Returns
+    -------
+    tuple
+        Task id as a tuple.
+    """
+    sep = "/" if "/" in task_id_string else ","
+
+    period, x, y = task_id_string.split(sep)
+
+    if period.startswith("x"):
+        period, x, y = y, period, x
+
+    x = int(x)
+    y = int(y)
+
+    task_id_tuple = (period, x, y)
+
+    return task_id_tuple
