@@ -9,7 +9,6 @@ Geoscience Australia
 
 import collections
 import concurrent.futures
-import datetime
 import enum
 import logging
 import os
@@ -31,12 +30,8 @@ from deafrica_conflux.db import (
     get_engine_waterbodies,
     get_or_create,
 )
-from deafrica_conflux.io import (
-    check_if_s3_uri,
-    find_parquet_files,
-    read_table_from_parquet,
-    string_to_date,
-)
+from deafrica_conflux.io import check_if_s3_uri, find_parquet_files, load_parquet_file
+from deafrica_conflux.text import date_to_stack_format_str
 
 _log = logging.getLogger(__name__)
 
@@ -44,22 +39,6 @@ _log = logging.getLogger(__name__)
 class StackMode(enum.Enum):
     WATERBODIES = "waterbodies"
     WATERBODIES_DB = "waterbodies_db"
-
-
-def stack_format_date(date: datetime.datetime) -> str:
-    """
-    Format a date to match DE Africa conflux products datetime.
-
-    Arguments
-    ---------
-    date : datetime
-
-    Returns
-    -------
-    str
-    """
-    # e.g. 1987-05-24T01:30:18Z
-    return date.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def remove_timeseries_duplicates(df: pd.DataFrame) -> pd.DataFrame:
@@ -91,31 +70,6 @@ def remove_timeseries_duplicates(df: pd.DataFrame) -> pd.DataFrame:
     # Remember to remove the temp column DAY.
     df.drop(columns=["DAY"], inplace=True)
 
-    return df
-
-
-def load_parquet_file(path: str | Path) -> pd.DataFrame:
-    """
-    Load Parquet file from given path.
-
-    Arguments
-    ---------
-    path : str | Path
-        Path (s3 or local) to search for Parquet files.
-    Returns
-    -------
-    pandas.DataFrame
-        pandas DataFrame
-    """
-    # "Support" pathlib Paths.
-    path = str(path)
-
-    df = read_table_from_parquet(path)
-    # the pq file will be empty if no polygon belongs to that scene
-    if df.empty is not True:
-        date = string_to_date(df.attrs["date"])
-        date = stack_format_date(date)
-        df.loc[:, "date"] = date
     return df
 
 
@@ -151,13 +105,11 @@ def stack_waterbodies_parquet_to_csv(
     if verbose:
         parquet_file_paths = tqdm(parquet_file_paths)
     for pq_file_path in parquet_file_paths:
-        df = read_table_from_parquet(pq_file_path)
-        date = string_to_date(df.attrs["date"])
-        date = stack_format_date(date)
+        df = load_parquet_file(pq_file_path)
         # df is ids x bands
         # for each ID...
         for uid, series in df.iterrows():
-            series.name = date
+            series.name = series.date
             id_to_series[uid].append(series)
 
     _log.info("Writing...")
@@ -257,9 +209,7 @@ def stack_waterbodies_parquet_to_db(
 
     for pq_file_path in parquet_file_paths:
         # read the table in...
-        df = read_table_from_parquet(pq_file_path)
-        # parse the date...
-        date = string_to_date(df.attrs["date"])
+        df = load_parquet_file(pq_file_path)
         # df is ids x bands
         # for each ID...
         obss = []
@@ -276,7 +226,7 @@ def stack_waterbodies_parquet_to_db(
                 wet_percentage=series.wet_percentage,
                 invalid_percentage=series.invalid_percentage,
                 platform="UNK",
-                date=date,
+                date=series.date,
             )
             obss.append(obs)
         # basically just hoping that these don't exist already
@@ -356,7 +306,7 @@ def stack_waterbodies_db_to_csv(
 
         rows = [
             {
-                "date": stack_format_date(ob.date),
+                "date": date_to_stack_format_str(ob.date),
                 "wet_percentage": ob.wet_percentage,
                 "wet_pixel_count": ob.wet_pixel_count,
                 "invalid_percentage": ob.invalid_percentage,

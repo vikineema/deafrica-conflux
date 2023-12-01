@@ -17,6 +17,14 @@ import pandas as pd
 import pyarrow
 import pyarrow.parquet
 
+from deafrica_conflux.text import (
+    date_to_day_str,
+    date_to_stack_format_str,
+    make_parquet_file_name,
+    serialise_date,
+    unserialise_date,
+)
+
 _log = logging.getLogger(__name__)
 
 # File extensions to recognise as Parquet files.
@@ -30,82 +38,6 @@ GEOTIFF_EXTENSIONS = {".tif", ".tiff", ".gtiff"}
 
 # Metadata key for Parquet files.
 PARQUET_META_KEY = b"conflux.metadata"
-
-# Format of string date metadata.
-DATE_FORMAT = "%Y%m%d-%H%M%S-%f"
-DATE_FORMAT_DAY = "%Y%m%d"
-
-
-def date_to_string(date: datetime.datetime) -> str:
-    """
-    Serialise a date.
-
-    Arguments
-    ---------
-    date : datetime
-
-    Returns
-    -------
-    str
-    """
-    return date.strftime(DATE_FORMAT)
-
-
-def date_to_string_day(date: datetime.datetime) -> str:
-    """
-    Serialise a date discarding hours/mins/seconds.
-
-    Arguments
-    ---------
-    date : datetime
-
-    Returns
-    -------
-    str
-    """
-    return date.strftime(DATE_FORMAT_DAY)
-
-
-def string_to_date(date: str) -> datetime.datetime:
-    """
-    Unserialise a date.
-
-    Arguments
-    ---------
-    date : str
-
-    Returns
-    -------
-    datetime
-    """
-    return datetime.datetime.strptime(date, DATE_FORMAT)
-
-
-def make_parquet_file_name(drill_name: str, uuid: str, centre_date: datetime.datetime) -> str:
-    """
-    Make filename for Parquet.
-
-    Arguments
-    ---------
-    drill_name : str
-        Name of the drill.
-
-    uuid : str
-        UUID of reference dataset.
-
-    centre_date : datetime
-        Centre date of reference dataset.
-
-    Returns
-    -------
-    str
-        Parquet filename.
-    """
-    datestring = date_to_string(centre_date)
-
-    parquet_file_name = f"{drill_name}_{uuid}_{datestring}.pq"
-
-    return parquet_file_name
 
 
 def check_if_s3_uri(file_path: str | Path) -> bool:
@@ -171,7 +103,7 @@ def table_exists(
         fs = fsspec.filesystem("file")
 
     file_name = make_parquet_file_name(drill_name, uuid, centre_date)
-    folder_name = date_to_string_day(centre_date)
+    folder_name = date_to_day_str(centre_date)
 
     path = os.path.join(output_directory, folder_name, file_name)
 
@@ -225,7 +157,7 @@ def write_table_to_parquet(
     meta_json = json.dumps(
         {
             "drill": drill_name,
-            "date": date_to_string(centre_date),
+            "date": serialise_date(centre_date),
         }
     )
 
@@ -241,7 +173,7 @@ def write_table_to_parquet(
     table_pa = table_pa.replace_schema_metadata(combined_meta)
 
     # Write the table.
-    folder_name = date_to_string_day(centre_date)
+    folder_name = date_to_day_str(centre_date)
     file_name = make_parquet_file_name(drill_name, uuid, centre_date)
 
     if check_if_s3_uri(output_directory):
@@ -286,6 +218,31 @@ def read_table_from_parquet(path: str | Path) -> pd.DataFrame:
     metadata = json.loads(meta_json)
     for key, val in metadata.items():
         df.attrs[key] = val
+    return df
+
+
+def load_parquet_file(path: str | Path) -> pd.DataFrame:
+    """
+    Load Parquet file from given path.
+
+    Arguments
+    ---------
+    path : str | Path
+        Path (s3 or local) to search for Parquet files.
+    Returns
+    -------
+    pandas.DataFrame
+        pandas DataFrame
+    """
+    # "Support" pathlib Paths.
+    path = str(path)
+
+    df = read_table_from_parquet(path)
+    # the pq file will be empty if no polygon belongs to that scene
+    if df.empty is not True:
+        date = unserialise_date(df.attrs["date"])
+        date = date_to_stack_format_str(date)
+        df.loc[:, "date"] = date
     return df
 
 
