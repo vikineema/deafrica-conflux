@@ -1,5 +1,5 @@
 """Text formatting functions"""
-
+import os
 from datetime import datetime
 
 
@@ -89,3 +89,24 @@ def make_parquet_file_name(drill_name: str, uuid: str, centre_date: datetime) ->
     parquet_file_name = f"{drill_name}_{uuid}_{datestring}.pq"
 
     return parquet_file_name
+
+
+def parse_tile_ids(file_path: str) -> str:
+    """
+    Parse tile ids from a file path.
+
+    Parameters
+    ----------
+    file_path : str
+        File path to get the tile id from.
+
+    Returns
+    -------
+    str
+        Tile id
+    """
+    file_name = os.path.splitext(os.path.basename(file_path))[0]
+    x_id = int(file_name.split("_")[0].lstrip("x"))
+    y_id = int(file_name.split("_")[1].lstrip("y"))
+    tile_id = (x_id, y_id)
+    return tile_id
