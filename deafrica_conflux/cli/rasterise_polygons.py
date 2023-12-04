@@ -50,7 +50,7 @@ from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3
     default=True,
     help="Overwrite existing polygons raster file.",
 )
-def rasterise_polyongs(
+def rasterise_polygons(
     verbose,
     grid_name,
     product,
