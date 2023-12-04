@@ -1,37 +1,5 @@
 """Text formatting functions"""
 import os
-from datetime import datetime
-
-
-def date_to_stack_format_str(date: datetime) -> str:
-    """
-    Format a date to match DE Africa conflux products datetime.
-
-    Arguments
-    ---------
-    date : datetime
-
-    Returns
-    -------
-    str
-    """
-    # e.g. 1987-05-24T01:30:18Z
-    return date.strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def date_to_day_str(date: datetime) -> str:
-    """
-    Serialise a date discarding hours/mins/seconds.
-
-    Arguments
-    ---------
-    date : datetime
-
-    Returns
-    -------
-    str
-    """
-    return date.strftime("%Y%m%d")
 
 
 def make_parquet_file_name(drill_name: str, task_id_string: str) -> str:

@@ -16,7 +16,7 @@ import pandas as pd
 import pyarrow
 import pyarrow.parquet
 
-from deafrica_conflux.text import date_to_stack_format_str, make_parquet_file_name
+from deafrica_conflux.text import make_parquet_file_name
 
 _log = logging.getLogger(__name__)
 
@@ -199,7 +199,6 @@ def load_parquet_file(path: str | Path) -> pd.DataFrame:
     # the pq file will be empty if no polygon belongs to that scene
     if df.empty is not True:
         date = str(df.attrs["date"])
-        date = date_to_stack_format_str(date)
         df.loc[:, "date"] = date
     return df
 
