@@ -127,7 +127,16 @@ def rasterise_polygons(
     _log.info(f"{product} tiles written to {tiles_output_fp}")
 
     # Load the polygons.
-    polygons_gdf = gpd.read_parquet(polygons_file_path).to_crs(crs)
+    try:
+        polygons_gdf = gpd.read_parquet(polygons_file_path).to_crs(crs)
+    except Exception:
+        try:
+            polygons_gdf = gpd.read_file(polygons_file_path).to_crs(crs)
+        except Exception as error:
+            _log.error(f"Could not load file {polygons_file_path}")
+            _log.error(error)
+            raise error
+
     _log.info(f"Polygon count {len(polygons_gdf)}")
 
     # Check the id column is unique.
