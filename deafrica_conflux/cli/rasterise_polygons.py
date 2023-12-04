@@ -23,7 +23,7 @@ from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3
 @click.command(
     "rasterise-polygons",
     no_args_is_help=True,
-    help="Rasterize a set of waterbodies polygons by tile.",
+    help="Rasterise a set of waterbodies polygons by tile.",
 )
 @click.option("-v", "--verbose", default="-v", count=True)
 @click.option("--grid-name", type=str, help="Grid name africa_{10|20|30|60}", default="africa_30")
@@ -44,7 +44,7 @@ from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3
     default="WB_ID",
     help="Unique key id in polygons vector file. Must contain either integers or floats.",
 )
-@click.option("output-directory", type=str, help="Directory to write the tiled polygon rasters to.")
+@click.option("output-directory", type=str, help="Directory to write the tiled polygons rasters to.")
 @click.option(
     "--overwrite/--no-overwrite",
     default=True,
