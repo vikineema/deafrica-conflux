@@ -19,7 +19,7 @@ from deafrica_conflux.text import task_id_to_string
     no_args_is_help=True,
 )
 @click.option("-v", "--verbose", default=1, count=True)
-@click.option("--cachedb--file-path", type=str, help="File path to the cache file database.")
+@click.option("--cachedb-file-path", type=str, help="File path to the cache file database.")
 @click.option(
     "--tasks-sqs-queue",
     type=str,
