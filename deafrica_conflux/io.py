@@ -199,7 +199,7 @@ def load_parquet_file(path: str | Path) -> pd.DataFrame:
     # the pq file will be empty if no polygon belongs to that scene
     if df.empty is not True:
         date = str(df.attrs["date"])
-        df.loc[:, "date"] = date
+        df.loc[:, "date"] = pd.to_datetime(date, format="%Y-%m-%d")
     return df
 
 
