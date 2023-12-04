@@ -6,7 +6,6 @@ Geoscience Australia
 2021
 """
 
-import json
 import logging
 import warnings
 from types import ModuleType

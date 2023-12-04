@@ -59,7 +59,7 @@ def summarise(region_mask, intensity_image):
     unique_values_and_counts = dict(zip(unique_values, unique_value_counts))
 
     # Start with pixel based calculations.
-    # px_total = np.sum(unique_value_counts)
+    px_total = np.sum(unique_value_counts)
     px_invalid = unique_values_and_counts.get(invalid_pixel_value, np.nan)
     px_dry = unique_values_and_counts.get(dry_pixel_value, np.nan)
     px_wet = unique_values_and_counts.get(wet_pixel_value, np.nan)
@@ -82,6 +82,7 @@ def summarise(region_mask, intensity_image):
 
     # Return all calculated values as a DataFrame.
     results = {
+        "px_total": [px_total],
         # "pc_wet": [pc_wet],
         "px_wet": [px_wet],
         "area_wet_m2": [area_wet],
