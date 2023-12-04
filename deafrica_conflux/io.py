@@ -4,7 +4,6 @@ Matthew Alger
 Geoscience Australia
 2021
 """
-import datetime
 import json
 import logging
 import os
@@ -17,13 +16,7 @@ import pandas as pd
 import pyarrow
 import pyarrow.parquet
 
-from deafrica_conflux.text import (
-    date_to_day_str,
-    date_to_stack_format_str,
-    make_parquet_file_name,
-    serialise_date,
-    unserialise_date,
-)
+from deafrica_conflux.text import date_to_stack_format_str, make_parquet_file_name
 
 _log = logging.getLogger(__name__)
 
@@ -40,85 +33,9 @@ GEOTIFF_EXTENSIONS = {".tif", ".tiff", ".gtiff"}
 PARQUET_META_KEY = b"conflux.metadata"
 
 
-def check_if_s3_uri(file_path: str | Path) -> bool:
-    """
-    Checks if a file path is an S3 URI.
-
-    Parameters
-    ----------
-    file_path : str | Path
-        File path to check
-
-    Returns
-    -------
-    bool
-        True if the file path is an S3 URI.
-    """
-    # "Support" pathlib Paths.
-    file_path = str(file_path)
-
-    file_scheme = urllib.parse.urlparse(file_path).scheme
-
-    valid_s3_schemes = ["s3"]
-
-    if file_scheme in valid_s3_schemes:
-        return True
-    else:
-        return False
-
-
-def table_exists(
-    drill_name: str, uuid: str, centre_date: datetime.datetime, output_directory: str
-) -> bool:
-    """
-    Check whether a table already exists.
-
-    Arguments
-    ---------
-    drill_name : str
-        Name of the drill.
-
-    uuid : str
-        UUID of reference dataset.
-
-    centre_date : datetime
-        Centre date of reference dataset.
-
-    table : pd.DataFrame
-        Dataframe with index polygons and columns bands.
-
-    output_directory : str
-        Path to output directory.
-
-    Returns
-    -------
-    bool
-    """
-    # "Support" pathlib Paths.
-    output_directory = str(output_directory)
-
-    if check_if_s3_uri(output_directory):
-        fs = fsspec.filesystem("s3")
-    else:
-        fs = fsspec.filesystem("file")
-
-    file_name = make_parquet_file_name(drill_name, uuid, centre_date)
-    folder_name = date_to_day_str(centre_date)
-
-    path = os.path.join(output_directory, folder_name, file_name)
-
-    if fs.exists(path):
-        _log.info(f"{path} exists.")
-    else:
-        _log.info(f"{path} does not exist.")
-
-    return fs.exists(path)
-
-
 def write_table_to_parquet(
     drill_name: str,
-    uuid: str,
-    centre_date: datetime.datetime,
+    task_id_string: str,
     table: pd.DataFrame,
     output_directory: str | Path,
 ) -> str:
@@ -130,11 +47,8 @@ def write_table_to_parquet(
     drill_name : str
         Name of the drill.
 
-    uuid : str
-        UUID of reference dataset.
-
-    centre_date : datetime
-        Centre date of reference dataset.
+    task_id_string : str
+        Task ID of the task.
 
     table : pd.DataFrame
         Dataframe with index polygons and columns bands.
@@ -150,6 +64,9 @@ def write_table_to_parquet(
     # "Support" pathlib Paths.
     output_directory = str(output_directory)
 
+    # Parse the task id.
+    period, x, y = task_id_string.split("/")
+
     # Convert the table to pyarrow.
     table_pa = pyarrow.Table.from_pandas(table)
 
@@ -157,7 +74,7 @@ def write_table_to_parquet(
     meta_json = json.dumps(
         {
             "drill": drill_name,
-            "date": serialise_date(centre_date),
+            "date": period,
         }
     )
 
@@ -173,8 +90,8 @@ def write_table_to_parquet(
     table_pa = table_pa.replace_schema_metadata(combined_meta)
 
     # Write the table.
-    folder_name = date_to_day_str(centre_date)
-    file_name = make_parquet_file_name(drill_name, uuid, centre_date)
+    folder_name = os.path.join(f"x{x}", f"y{y}")
+    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
 
     if check_if_s3_uri(output_directory):
         fs = fsspec.filesystem("s3")
@@ -193,6 +110,49 @@ def write_table_to_parquet(
 
     _log.info(f"Table written to {output_file_path}")
     return output_file_path
+
+
+def table_exists(drill_name: str, task_id_string: str, output_directory: str) -> bool:
+    """
+    Check whether a table already exists.
+
+    Arguments
+    ---------
+    drill_name : str
+        Name of the drill.
+
+    task_id_string : str
+        Task ID of the task.
+
+    output_directory : str
+        Path to output directory.
+
+    Returns
+    -------
+    bool
+    """
+    # "Support" pathlib Paths.
+    output_directory = str(output_directory)
+
+    if check_if_s3_uri(output_directory):
+        fs = fsspec.filesystem("s3")
+    else:
+        fs = fsspec.filesystem("file")
+
+    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
+
+    # Parse the task id.
+    period, x, y = task_id_string.split("/")
+    folder_name = os.path.join(f"x{x}", f"y{y}")
+
+    path = os.path.join(output_directory, folder_name, file_name)
+
+    if fs.exists(path):
+        _log.info(f"{path} exists.")
+    else:
+        _log.info(f"{path} does not exist.")
+
+    return fs.exists(path)
 
 
 def read_table_from_parquet(path: str | Path) -> pd.DataFrame:
@@ -240,10 +200,37 @@ def load_parquet_file(path: str | Path) -> pd.DataFrame:
     df = read_table_from_parquet(path)
     # the pq file will be empty if no polygon belongs to that scene
     if df.empty is not True:
-        date = unserialise_date(df.attrs["date"])
+        date = str(df.attrs["date"])
         date = date_to_stack_format_str(date)
         df.loc[:, "date"] = date
     return df
+
+
+def check_if_s3_uri(file_path: str | Path) -> bool:
+    """
+    Checks if a file path is an S3 URI.
+
+    Parameters
+    ----------
+    file_path : str | Path
+        File path to check
+
+    Returns
+    -------
+    bool
+        True if the file path is an S3 URI.
+    """
+    # "Support" pathlib Paths.
+    file_path = str(file_path)
+
+    file_scheme = urllib.parse.urlparse(file_path).scheme
+
+    valid_s3_schemes = ["s3"]
+
+    if file_scheme in valid_s3_schemes:
+        return True
+    else:
+        return False
 
 
 def check_dir_exists(dir_path: str | Path):
