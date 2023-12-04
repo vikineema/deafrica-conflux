@@ -12,6 +12,7 @@ from datacube.utils.geometry import Geometry
 from odc.dscache.tools.tiling import parse_gridspec_with_name
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import wrap_xr
+from pandas.api.types import is_float_dtype, is_integer_dtype
 
 from deafrica_conflux.cli.logs import logging_setup
 from deafrica_conflux.filter_polygons import get_intersecting_polygons
@@ -41,7 +42,7 @@ from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3
     "--use-id",
     type=str,
     default="WB_ID",
-    help="Optional. Unique key id polygons vector file.",
+    help="Unique key id in polygons vector file. Must contain either integers or floats.",
 )
 @click.option("output-directory", type=str, help="Directory to write the tiled polygon rasters to.")
 @click.option(
@@ -129,6 +130,9 @@ def rasterise_polyongs(
 
     # Check the id column is unique.
     id_field = guess_id_field(input_gdf=polygons_gdf, use_id=use_id)
+
+    # Column must contain either integers or float values.
+    assert is_integer_dtype(polygons_gdf[id_field]) or is_float_dtype(polygons_gdf[id_field])
 
     _log.info("Filtering out tiles that do not intersect with any polygon...")
     filtered_tiles_gdf = get_intersecting_polygons(
