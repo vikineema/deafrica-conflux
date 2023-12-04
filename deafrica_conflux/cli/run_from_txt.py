@@ -13,6 +13,7 @@ from deafrica_conflux.cli.logs import logging_setup
 from deafrica_conflux.db import get_engine_waterbodies
 from deafrica_conflux.drill import drill
 from deafrica_conflux.io import (
+    check_dir_exists,
     check_file_exists,
     check_if_s3_uri,
     table_exists,
@@ -88,6 +89,18 @@ def run_from_txt(
     # Get the drill name from the plugin
     drill_name = plugin.product_name
 
+    if not check_dir_exists(polygons_rasters_directory):
+        _log.error(f"Directory {polygons_rasters_directory} does not exist!")
+        raise FileNotFoundError(f"Directory {polygons_rasters_directory} does not exist!)")
+
+    # Create the output directory if it does not exist.
+    if not check_dir_exists(output_directory):
+        if check_if_s3_uri(output_directory):
+            fsspec.filesystem("s3").makedirs(output_directory, exist_ok=True)
+        else:
+            fsspec.filesystem("file").makedirs(output_directory, exist_ok=True)
+        _log.info(f"Created directory {output_directory}")
+
     if not check_file_exists(cachedb_file_path):
         _log.error(f"Could not find the database file {cachedb_file_path}!")
         raise FileNotFoundError(f"{cachedb_file_path} does not exist!")
@@ -126,7 +139,7 @@ def run_from_txt(
 
     failed_tasks = []
     for i, task in enumerate(tasks):
-        _log.info(f"Processing {task} ({i + 1}/{len(tasks)})")
+        _log.info(f"Processing task {task} ({i + 1}/{len(tasks)})")
 
         # Get the tasks output file name.
         if not overwrite:
@@ -162,21 +175,21 @@ def run_from_txt(
                         )
 
             except KeyError as keyerr:
-                _log.exception(f"Found {task} has KeyError: {str(keyerr)}")
+                _log.exception(f"Found task {task} has KeyError: {str(keyerr)}")
                 failed_tasks = [].append(task)
             except TypeError as typeerr:
-                _log.exception(f"Found {task} has TypeError: {str(typeerr)}")
+                _log.exception(f"Found task {task} has TypeError: {str(typeerr)}")
                 failed_tasks.append(task)
             except RasterioIOError as ioerror:
-                _log.exception(f"Found {task} has RasterioIOError: {str(ioerror)}")
+                _log.exception(f"Found task {task} has RasterioIOError: {str(ioerror)}")
                 failed_tasks.append(task)
             except ValueError as valueerror:
-                _log.exception(f"Found {task} has ValueError: {str(valueerror)}")
+                _log.exception(f"Found task {task} has ValueError: {str(valueerror)}")
                 failed_tasks.append(task)
             else:
-                _log.info(f"{task} successful")
+                _log.info(f"Task {task} successful")
         else:
-            _log.info(f"{task} already exists, skipping")
+            _log.info(f"Drill output for {task} already exists, skipping")
 
         if failed_tasks:
             # Write the failed dataset ids to a text file.

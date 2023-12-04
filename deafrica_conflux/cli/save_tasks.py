@@ -100,6 +100,10 @@ def save_tasks(
         fs.makedirs(output_directory, exist_ok=True)
         _log.info(f"Created directory {output_directory}")
 
+    if not check_dir_exists(polygons_rasters_directory):
+        _log.error(f"Directory {polygons_rasters_directory} does not exist!")
+        raise FileNotFoundError(f"Directory {polygons_rasters_directory} does not exist!)")
+
     # Validate the product
     products = [product]
     # Connect to the datacube.
