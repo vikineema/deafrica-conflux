@@ -130,6 +130,7 @@ def rasterise_polygons(
     try:
         polygons_gdf = gpd.read_parquet(polygons_file_path).to_crs(crs)
     except Exception:
+        _log.info("Polygons vector file is not a parquet file")
         try:
             polygons_gdf = gpd.read_file(polygons_file_path).to_crs(crs)
         except Exception as error:
