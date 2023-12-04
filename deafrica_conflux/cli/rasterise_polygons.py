@@ -130,6 +130,9 @@ def rasterise_polygons(
     try:
         polygons_gdf = gpd.read_parquet(polygons_file_path).to_crs(crs)
     except Exception:
+        # One of the odc packages removes s3 as a valid url.
+        if "s3" not in gpd.io.file._VALID_URLS:
+            gpd.io.file._VALID_URLS.add("s3")
         _log.info("Polygons vector file is not a parquet file")
         try:
             polygons_gdf = gpd.read_file(polygons_file_path).to_crs(crs)
