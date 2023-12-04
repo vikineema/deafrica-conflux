@@ -33,6 +33,49 @@ GEOTIFF_EXTENSIONS = {".tif", ".tiff", ".gtiff"}
 PARQUET_META_KEY = b"conflux.metadata"
 
 
+def table_exists(drill_name: str, task_id_string: str, output_directory: str) -> bool:
+    """
+    Check whether a table already exists.
+
+    Arguments
+    ---------
+    drill_name : str
+        Name of the drill.
+
+    task_id_string : str
+        Task ID of the task.
+
+    output_directory : str
+        Path to output directory.
+
+    Returns
+    -------
+    bool
+    """
+    # "Support" pathlib Paths.
+    output_directory = str(output_directory)
+
+    if check_if_s3_uri(output_directory):
+        fs = fsspec.filesystem("s3")
+    else:
+        fs = fsspec.filesystem("file")
+
+    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
+
+    # Parse the task id.
+    period, x, y = task_id_string.split("/")
+    folder_name = os.path.join(f"x{x}", f"y{y}")
+
+    path = os.path.join(output_directory, folder_name, file_name)
+
+    if fs.exists(path):
+        _log.info(f"{path} exists.")
+    else:
+        _log.info(f"{path} does not exist.")
+
+    return fs.exists(path)
+
+
 def write_table_to_parquet(
     drill_name: str,
     task_id_string: str,
@@ -110,49 +153,6 @@ def write_table_to_parquet(
 
     _log.info(f"Table written to {output_file_path}")
     return output_file_path
-
-
-def table_exists(drill_name: str, task_id_string: str, output_directory: str) -> bool:
-    """
-    Check whether a table already exists.
-
-    Arguments
-    ---------
-    drill_name : str
-        Name of the drill.
-
-    task_id_string : str
-        Task ID of the task.
-
-    output_directory : str
-        Path to output directory.
-
-    Returns
-    -------
-    bool
-    """
-    # "Support" pathlib Paths.
-    output_directory = str(output_directory)
-
-    if check_if_s3_uri(output_directory):
-        fs = fsspec.filesystem("s3")
-    else:
-        fs = fsspec.filesystem("file")
-
-    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
-
-    # Parse the task id.
-    period, x, y = task_id_string.split("/")
-    folder_name = os.path.join(f"x{x}", f"y{y}")
-
-    path = os.path.join(output_directory, folder_name, file_name)
-
-    if fs.exists(path):
-        _log.info(f"{path} exists.")
-    else:
-        _log.info(f"{path} does not exist.")
-
-    return fs.exists(path)
 
 
 def read_table_from_parquet(path: str | Path) -> pd.DataFrame:

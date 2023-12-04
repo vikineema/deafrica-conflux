@@ -74,11 +74,13 @@ def publish_tasks(
 
     # Check if the cache db file exists.
     if not check_file_exists(cachedb_file_path):
+        _log.error(f"Could not find the database file {cachedb_file_path}!")
         raise FileNotFoundError(f"{cachedb_file_path} does not exist!")
     else:
         if check_if_s3_uri(cachedb_file_path):
             cachedb_file_path = s3_download(cachedb_file_path)
             if not check_file_exists(cachedb_file_path):
+                _log.error(f"{cachedb_file_path} did not download!")
                 raise FileNotFoundError(
                     f"{cachedb_file_path} does not exist! File did not download."
                 )

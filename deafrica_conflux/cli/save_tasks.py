@@ -233,7 +233,7 @@ def save_tasks(
     _log.info(f"Cache file written to {output_db_fp}")
 
     # pylint:disable=too-many-locals
-    csv_path = os.path.join(output_directory, f"{product}_{temporal_range}.csv")
+    csv_path = os.path.join(output_directory, f"{product}_{temporal_range_.short}.csv")
     _log.info(f"Writing summary to {csv_path}")
     with fs.open(csv_path, "wt", encoding="utf8") as f:
         f.write('"T","X","Y","datasets","days"\n')
