@@ -25,7 +25,7 @@ from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3
     no_args_is_help=True,
     help="Rasterise a set of waterbodies polygons by tile.",
 )
-@click.option("-v", "--verbose", default="-v", count=True)
+@click.option("-v", "--verbose", default=1, count=True)
 @click.option("--grid-name", type=str, help="Grid name africa_{10|20|30|60}", default="africa_30")
 @click.option(
     "--product",
