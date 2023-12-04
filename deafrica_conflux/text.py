@@ -128,7 +128,7 @@ def task_id_to_string(task_id_tuple: tuple) -> str:
     """
     period, x, y = task_id_tuple
 
-    task_id_string = f"{period}/{x:02d}/{y:02d}"
+    task_id_string = f"{period}/{x:03d}/{y:03d}"
 
     return task_id_string
 
