@@ -50,7 +50,6 @@ from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
     default=False,
     help="Rerun tasks that have already been processed.",
 )
-@click.option("--db/--no-db", default=False, help="Write to the Waterbodies database.")
 @click.option(
     "--dump-empty-dataframe/--not-dump-empty-dataframe",
     default=False,
@@ -64,7 +63,6 @@ def run_from_txt(
     polygons_rasters_directory,
     output_directory,
     overwrite,
-    db,
     dump_empty_dataframe,
 ):
     # Set up logger.
