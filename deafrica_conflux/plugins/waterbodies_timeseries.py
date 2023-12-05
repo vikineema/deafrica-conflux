@@ -7,10 +7,8 @@ version = "0.0.1"
 resampling = "nearest"
 output_crs = "EPSG:6933"
 resolution = (-30, 30)
-
-input_products = {
-    "wofs_ls": ["water"],
-}
+dask_chunks = {"x": 3200, "y": 3200}
+measurements = ["water"]
 
 
 def transform(inputs: xr.Dataset) -> xr.Dataset:
@@ -72,25 +70,26 @@ def summarise(region_mask, intensity_image):
     area_wet = px_wet * px_area
 
     # Calculate percentages.
-    pc_wet = (px_wet / px_total) * 100.0
-    pc_dry = (px_dry / px_total) * 100.0
-    pc_invalid = (px_invalid / px_total) * 100.0
+    # pc_wet = (px_wet / px_total) * 100.0
+    # pc_dry = (px_dry / px_total) * 100.0
+    # pc_invalid = (px_invalid / px_total) * 100.0
 
     # If the proportion of the waterbody missing is greater than 10%,
     # set the values for pc_wet and pc_dry to nan.
-    if pc_invalid > 10.0:
-        pc_wet = np.nan
-        pc_dry = np.nan
+    # if pc_invalid > 10.0:
+    #   pc_wet = np.nan
+    #    pc_dry = np.nan
 
     # Return all calculated values as a DataFrame.
     results = {
-        "pc_wet": [pc_wet],
+        "px_total": [px_total],
+        # "pc_wet": [pc_wet],
         "px_wet": [px_wet],
         "area_wet_m2": [area_wet],
-        "pc_dry": [pc_dry],
+        # "pc_dry": [pc_dry],
         "px_dry": [px_dry],
         "area_dry_m2": [area_dry],
-        "pc_invalid": [pc_invalid],
+        # "pc_invalid": [pc_invalid],
         "px_invalid": [px_invalid],
         "area_invalid_m2": [area_invalid],
     }
