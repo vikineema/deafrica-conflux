@@ -30,8 +30,12 @@ from deafrica_conflux.db import (
     get_engine_waterbodies,
     get_or_create,
 )
-from deafrica_conflux.io import check_if_s3_uri, find_parquet_files, load_parquet_file
-from deafrica_conflux.text import date_to_stack_format_str
+from deafrica_conflux.io import (
+    check_dir_exists,
+    check_if_s3_uri,
+    find_parquet_files,
+    load_parquet_file,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -41,9 +45,9 @@ class StackMode(enum.Enum):
     WATERBODIES_DB = "waterbodies_db"
 
 
-def remove_timeseries_duplicates(df: pd.DataFrame) -> pd.DataFrame:
+def update_timeseries(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Remove duplicated (same day) data in the timeseries DataFrame.
+    Update the data in the timeseries DataFrame.
 
     Arguments
     ---------
@@ -53,34 +57,37 @@ def remove_timeseries_duplicates(df: pd.DataFrame) -> pd.DataFrame:
     Returns
     -------
     pd.DataFrame
-        The polygon base timeseries result without duplicated data.
+        The polygon base timeseries.
     """
+    assert "date" in df.columns
 
-    if "date" not in df.columns:
-        # In the WaterBody PQ to CSV use case, the index is date
-        df = df.assign(DAY=[e.split("T")[0] for e in df.index])
-    else:
-        df = df.assign(DAY=[e.split("T")[0] for e in df["date"]])
+    keep = np.unique(df["date"])
 
-    df.sort_values(["DAY", "pc_invalid"], ascending=True, inplace=True)
-    # For the invalid_percentage, the less the better.
-    # So we only keep the first one.
-    df.drop_duplicates("DAY", keep="first", inplace=True)
+    # Group by day
+    df = df.groupby(pd.Grouper(key="date", axis=0, freq="D")).sum()
+    # Remove filler rows.
+    df = df[df.index.isin(keep)]
 
-    # Remember to remove the temp column DAY.
-    df.drop(columns=["DAY"], inplace=True)
+    df["pc_wet"] = (df["px_wet"] / df["px_total"]) * 100.0
+    df["pc_dry"] = (df["px_dry"] / df["px_total"]) * 100.0
+    df["pc_invalid"] = (df["px_invalid"] / df["px_total"]) * 100.0
 
+    # If the proportion of the waterbody missing is greater than 10%,
+    # set the values for pc_wet and pc_dry to nan.
+    df.loc[df["pc_invalid"] > 10.0, "pc_wet"] = np.nan
+    df.loc[df["pc_invalid"] > 10.0, "pc_dry"] = np.nan
+
+    df.sort_index(inplace=True)
     return df
 
 
 def stack_waterbodies_parquet_to_csv(
     parquet_file_paths: [str | Path],
     output_directory: str | Path,
-    remove_duplicated_data: bool = True,
-    verbose: bool = False,
+    polygons_ids_mapping: dict[str, str],
 ):
     """
-    Stack Parquet files into CSVs like DE Africa Waterbodies does.
+    Stack Parquet files into CSVs.
 
     Arguments
     ---------
@@ -90,45 +97,53 @@ def stack_waterbodies_parquet_to_csv(
     output_directory : str | Path
         Path to output directory.
 
-    remove_duplicated_data: bool
-        Remove timeseries duplicated data or not
-
-    verbose : bool
+    polygons_ids_mapping: bool
+        Dictionary mapping numerical polygon ids (WB_ID) to string polygon ids (UID)
     """
     # "Support" pathlib Paths.
     parquet_file_paths = [str(pq_file_path) for pq_file_path in parquet_file_paths]
     output_directory = str(output_directory)
 
+    assert polygons_ids_mapping
+
     # id -> [series of date x bands]
     id_to_series = collections.defaultdict(list)
-    _log.info("Reading...")
-    if verbose:
-        parquet_file_paths = tqdm(parquet_file_paths)
-    for pq_file_path in parquet_file_paths:
-        df = load_parquet_file(pq_file_path)
-        # df is ids x bands
-        # for each ID...
-        for uid, series in df.iterrows():
-            series.name = series.date
-            id_to_series[uid].append(series)
+    n_total = len(parquet_file_paths)
+    label = f"Reading {n_total} drill output parquet files."
+    with tqdm(parquet_file_paths, desc=label, total=n_total) as parquet_file_paths:
+        for pq_file_path in parquet_file_paths:
+            df = load_parquet_file(pq_file_path)
+            # df is ids x bands
+            # for each ID...
+            for uid, series in df.iterrows():
+                series.name = series.date
+                uid = polygons_ids_mapping[str(uid)]
+                id_to_series[uid].append(series)
 
-    _log.info("Writing...")
-    for uid, seriess in id_to_series.items():
+    n_total = len(id_to_series.items())
+    for i, item in enumerate(id_to_series.items()):
+        uid, seriess = item
+        _log.info(f"Writing csv file for polygon {uid} ({i + 1}/{n_total})")
+
         df = pd.DataFrame(seriess)
-        if remove_duplicated_data:
-            df = remove_timeseries_duplicates(df)
-        df.sort_index(inplace=True)
+        df = update_timeseries(df=df)
 
-        output_file_name = os.path.join(output_directory, f"{uid[:4]}", f"{uid}.csv")
-        _log.info(f"Writing {output_file_name}")
-        if check_if_s3_uri(output_directory):
+        output_file_parent_directory = os.path.join(output_directory, f"{uid[:4]}")
+        output_file_path = os.path.join(output_file_parent_directory, f"{uid}.csv")
+
+        if check_if_s3_uri(output_file_parent_directory):
             fs = fsspec.filesystem("s3")
         else:
             fs = fsspec.filesystem("file")
-            fs.mkdirs(os.path.join(output_directory, f"{uid[:4]}"), exist_ok=True)
 
-        with fs.open(output_file_name, "w") as f:
+        if not check_dir_exists(output_file_parent_directory):
+            fs.mkdirs(output_file_parent_directory, exist_ok=True)
+            _log.info(f"Created directory: {output_file_parent_directory}")
+
+        with fs.open(output_file_path, "w") as f:
             df.to_csv(f, index_label="date")
+
+        _log.info(f"CSV file written to {output_file_path}")
 
 
 def get_waterbody_key(uid: str, session: Session):
@@ -306,7 +321,7 @@ def stack_waterbodies_db_to_csv(
 
         rows = [
             {
-                "date": date_to_stack_format_str(ob.date),
+                "date": ob.date,
                 "wet_percentage": ob.wet_percentage,
                 "wet_pixel_count": ob.wet_pixel_count,
                 "invalid_percentage": ob.invalid_percentage,
