@@ -19,7 +19,7 @@ import geohash
 import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session, scoped_session, sessionmaker
-from tqdm.auto import tqdm
+from tqdm import tqdm
 
 from deafrica_conflux.db import (
     Engine,
