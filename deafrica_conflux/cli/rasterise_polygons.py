@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 
@@ -12,7 +13,7 @@ from datacube.utils.geometry import Geometry
 from odc.dscache.tools.tiling import parse_gridspec_with_name
 from odc.geo.geobox import GeoBox
 from odc.geo.xr import wrap_xr
-from pandas.api.types import is_float_dtype, is_integer_dtype
+from pandas.api.types import is_float_dtype, is_integer_dtype, is_string_dtype
 
 from deafrica_conflux.cli.logs import logging_setup
 from deafrica_conflux.filter_polygons import get_intersecting_polygons
@@ -39,10 +40,16 @@ from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3
     help="Path to the polygons to be rasterised.",
 )
 @click.option(
-    "--use-id",
+    "--numerical-id",
     type=str,
     default="WB_ID",
-    help="Unique key id in polygons vector file. Must contain either integers or floats.",
+    help="Unique key id in polygons vector file which contains either integers or floats.",
+)
+@click.option(
+    "--string-id",
+    type=str,
+    default="UID",
+    help="Unique key id in polygons vector file which contains only string",
 )
 @click.option(
     "--output-directory", type=str, help="Directory to write the tiled polygons rasters to."
@@ -57,7 +64,8 @@ def rasterise_polygons(
     grid_name,
     product,
     polygons_file_path,
-    use_id,
+    numerical_id,
+    string_id,
     output_directory,
     overwrite,
 ):
@@ -130,9 +138,6 @@ def rasterise_polygons(
     try:
         polygons_gdf = gpd.read_parquet(polygons_file_path).to_crs(crs)
     except Exception:
-        # One of the odc packages removes s3 as a valid url.
-        if "s3" not in gpd.io.file._VALID_URLS:
-            gpd.io.file._VALID_URLS.add("s3")
         _log.info("Polygons vector file is not a parquet file")
         try:
             polygons_gdf = gpd.read_file(polygons_file_path).to_crs(crs)
@@ -143,11 +148,20 @@ def rasterise_polygons(
 
     _log.info(f"Polygon count {len(polygons_gdf)}")
 
-    # Check the id column is unique.
-    id_field = guess_id_field(input_gdf=polygons_gdf, use_id=use_id)
+    # Check the id columns are unique.
+    numerical_id = guess_id_field(input_gdf=polygons_gdf, use_id=numerical_id)
+    assert is_integer_dtype(polygons_gdf[numerical_id]) or is_float_dtype(
+        polygons_gdf[numerical_id]
+    )
 
-    # Column must contain either integers or float values.
-    assert is_integer_dtype(polygons_gdf[id_field]) or is_float_dtype(polygons_gdf[id_field])
+    string_id = guess_id_field(input_gdf=polygons_gdf, use_id=string_id)
+    assert is_string_dtype(polygons_gdf[string_id])
+
+    polygons_ids_mapping = dict(zip(polygons_gdf[numerical_id], polygons_gdf[string_id]))
+    polygons_ids_mapping_fp = os.path.join(rasters_output_directory, "polygons_ids_mapping.json")
+    with fs.open(polygons_ids_mapping_fp, "w") as fp:
+        json.dump(polygons_ids_mapping, fp)
+    _log.info(f"Polygos IDs dictionary written to {polygons_ids_mapping_fp}")
 
     _log.info("Filtering out tiles that do not intersect with any polygon...")
     filtered_tiles_gdf = get_intersecting_polygons(
@@ -181,11 +195,11 @@ def rasterise_polygons(
 
             # Get the polygons that intersect with the tile.
             tile_polygons = get_intersecting_polygons(
-                region=tile, polygons_gdf=polygons_gdf, use_id=id_field
+                region=tile, polygons_gdf=polygons_gdf, use_id=numerical_id
             )
 
             # Rasterise shapes into a numpy array
-            shapes = zip(tile_polygons.geometry, tile_polygons[id_field])
+            shapes = zip(tile_polygons.geometry, tile_polygons[numerical_id])
             tile_raster_np = rasterio.features.rasterize(
                 shapes=shapes, out_shape=tile_geobox.shape, transform=tile_geobox.transform
             )
