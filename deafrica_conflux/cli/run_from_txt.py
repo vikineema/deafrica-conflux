@@ -10,7 +10,6 @@ from odc.aws import s3_download
 from rasterio.errors import RasterioIOError
 
 from deafrica_conflux.cli.logs import logging_setup
-from deafrica_conflux.db import get_engine_waterbodies
 from deafrica_conflux.drill import drill
 from deafrica_conflux.io import (
     check_dir_exists,
@@ -20,7 +19,6 @@ from deafrica_conflux.io import (
     write_table_to_parquet,
 )
 from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
-from deafrica_conflux.stack import stack_waterbodies_parquet_to_db
 
 
 @click.command(
@@ -128,9 +126,6 @@ def run_from_txt(
     _log.info(f"Read {len(tasks)} tasks from file.")
     _log.debug(f"Read {tasks} from file.")
 
-    if db:
-        engine = get_engine_waterbodies()
-
     # Connect to the datacube
     dc = datacube.Datacube(app="deafrica-conflux-drill")
 
@@ -159,21 +154,12 @@ def run_from_txt(
                 )
                 # Write the table to a parquet file.
                 if (dump_empty_dataframe) or (not table.empty):
-                    pq_file_name = write_table_to_parquet(
+                    pq_file_name = write_table_to_parquet(  # noqa F841
                         drill_name=drill_name,
                         task_id_string=task,
                         table=table,
                         output_directory=output_directory,
                     )
-                    if db:
-                        _log.info(f"Writing {pq_file_name} to database")
-                        stack_waterbodies_parquet_to_db(
-                            parquet_file_paths=[pq_file_name],
-                            verbose=verbose,
-                            engine=engine,
-                            drop=False,
-                        )
-
             except KeyError as keyerr:
                 _log.exception(f"Found task {task} has KeyError: {str(keyerr)}")
                 failed_tasks = [].append(task)
