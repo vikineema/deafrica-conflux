@@ -34,7 +34,7 @@ def validate_plugin(plugin: ModuleType):
     required_globals = [
         "product_name",
         "version",
-        "input_products",
+        # "input_products",
         "transform",
         "summarise",
         "resolution",

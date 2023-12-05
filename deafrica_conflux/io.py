@@ -4,7 +4,6 @@ Matthew Alger
 Geoscience Australia
 2021
 """
-import datetime
 import json
 import logging
 import os
@@ -17,6 +16,8 @@ import pandas as pd
 import pyarrow
 import pyarrow.parquet
 
+from deafrica_conflux.text import make_parquet_file_name
+
 _log = logging.getLogger(__name__)
 
 # File extensions to recognise as Parquet files.
@@ -25,116 +26,14 @@ PARQUET_EXTENSIONS = {".pq", ".parquet"}
 # File extensions to recognise as CSV files.
 CSV_EXTENSIONS = {".csv", ".CSV"}
 
+# File extensions to recognise as GeoTIFF files.
+GEOTIFF_EXTENSIONS = {".tif", ".tiff", ".gtiff"}
+
 # Metadata key for Parquet files.
 PARQUET_META_KEY = b"conflux.metadata"
 
-# Format of string date metadata.
-DATE_FORMAT = "%Y%m%d-%H%M%S-%f"
-DATE_FORMAT_DAY = "%Y%m%d"
 
-
-def date_to_string(date: datetime.datetime) -> str:
-    """
-    Serialise a date.
-
-    Arguments
-    ---------
-    date : datetime
-
-    Returns
-    -------
-    str
-    """
-    return date.strftime(DATE_FORMAT)
-
-
-def date_to_string_day(date: datetime.datetime) -> str:
-    """
-    Serialise a date discarding hours/mins/seconds.
-
-    Arguments
-    ---------
-    date : datetime
-
-    Returns
-    -------
-    str
-    """
-    return date.strftime(DATE_FORMAT_DAY)
-
-
-def string_to_date(date: str) -> datetime.datetime:
-    """
-    Unserialise a date.
-
-    Arguments
-    ---------
-    date : str
-
-    Returns
-    -------
-    datetime
-    """
-    return datetime.datetime.strptime(date, DATE_FORMAT)
-
-
-def make_parquet_file_name(drill_name: str, uuid: str, centre_date: datetime.datetime) -> str:
-    """
-    Make filename for Parquet.
-
-    Arguments
-    ---------
-    drill_name : str
-        Name of the drill.
-
-    uuid : str
-        UUID of reference dataset.
-
-    centre_date : datetime
-        Centre date of reference dataset.
-
-    Returns
-    -------
-    str
-        Parquet filename.
-    """
-    datestring = date_to_string(centre_date)
-
-    parquet_file_name = f"{drill_name}_{uuid}_{datestring}.pq"
-
-    return parquet_file_name
-
-
-def check_if_s3_uri(file_path: str | Path) -> bool:
-    """
-    Checks if a file path is an S3 URI.
-
-    Parameters
-    ----------
-    file_path : str | Path
-        File path to check
-
-    Returns
-    -------
-    bool
-        True if the file path is an S3 URI.
-    """
-    # "Support" pathlib Paths.
-    file_path = str(file_path)
-
-    file_scheme = urllib.parse.urlparse(file_path).scheme
-
-    valid_s3_schemes = ["s3"]
-
-    if file_scheme in valid_s3_schemes:
-        return True
-    else:
-        return False
-
-
-def table_exists(
-    drill_name: str, uuid: str, centre_date: datetime.datetime, output_directory: str
-) -> bool:
+def table_exists(drill_name: str, task_id_string: str, output_directory: str) -> bool:
     """
     Check whether a table already exists.
 
@@ -143,14 +42,8 @@ def table_exists(
     drill_name : str
         Name of the drill.
 
-    uuid : str
-        UUID of reference dataset.
-
-    centre_date : datetime
-        Centre date of reference dataset.
-
-    table : pd.DataFrame
-        Dataframe with index polygons and columns bands.
+    task_id_string : str
+        Task ID of the task.
 
     output_directory : str
         Path to output directory.
@@ -167,10 +60,12 @@ def table_exists(
     else:
         fs = fsspec.filesystem("file")
 
-    file_name = make_parquet_file_name(drill_name, uuid, centre_date)
-    folder_name = date_to_string_day(centre_date)
+    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
 
-    path = os.path.join(output_directory, folder_name, file_name)
+    # Parse the task id.
+    period, x, y = task_id_string.split("/")
+
+    path = os.path.join(output_directory, period, file_name)
 
     if fs.exists(path):
         _log.info(f"{path} exists.")
@@ -182,8 +77,7 @@ def table_exists(
 
 def write_table_to_parquet(
     drill_name: str,
-    uuid: str,
-    centre_date: datetime.datetime,
+    task_id_string: str,
     table: pd.DataFrame,
     output_directory: str | Path,
 ) -> str:
@@ -195,11 +89,8 @@ def write_table_to_parquet(
     drill_name : str
         Name of the drill.
 
-    uuid : str
-        UUID of reference dataset.
-
-    centre_date : datetime
-        Centre date of reference dataset.
+    task_id_string : str
+        Task ID of the task.
 
     table : pd.DataFrame
         Dataframe with index polygons and columns bands.
@@ -215,6 +106,9 @@ def write_table_to_parquet(
     # "Support" pathlib Paths.
     output_directory = str(output_directory)
 
+    # Parse the task id.
+    period, x, y = task_id_string.split("/")
+
     # Convert the table to pyarrow.
     table_pa = pyarrow.Table.from_pandas(table)
 
@@ -222,7 +116,7 @@ def write_table_to_parquet(
     meta_json = json.dumps(
         {
             "drill": drill_name,
-            "date": date_to_string(centre_date),
+            "date": period,
         }
     )
 
@@ -238,8 +132,7 @@ def write_table_to_parquet(
     table_pa = table_pa.replace_schema_metadata(combined_meta)
 
     # Write the table.
-    folder_name = date_to_string_day(centre_date)
-    file_name = make_parquet_file_name(drill_name, uuid, centre_date)
+    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
 
     if check_if_s3_uri(output_directory):
         fs = fsspec.filesystem("s3")
@@ -247,7 +140,7 @@ def write_table_to_parquet(
         fs = fsspec.filesystem("file")
 
     # Check if the parent folder exists.
-    parent_folder = os.path.join(output_directory, folder_name)
+    parent_folder = os.path.join(output_directory, period)
     if not check_dir_exists(parent_folder):
         fs.makedirs(parent_folder, exist_ok=True)
         _log.info(f"Created directory: {parent_folder}")
@@ -284,6 +177,57 @@ def read_table_from_parquet(path: str | Path) -> pd.DataFrame:
     for key, val in metadata.items():
         df.attrs[key] = val
     return df
+
+
+def load_parquet_file(path: str | Path) -> pd.DataFrame:
+    """
+    Load Parquet file from given path.
+
+    Arguments
+    ---------
+    path : str | Path
+        Path (s3 or local) to search for Parquet files.
+    Returns
+    -------
+    pandas.DataFrame
+        pandas DataFrame
+    """
+    # "Support" pathlib Paths.
+    path = str(path)
+
+    df = read_table_from_parquet(path)
+    # the pq file will be empty if no polygon belongs to that scene
+    if df.empty is not True:
+        date = str(df.attrs["date"])
+        df.loc[:, "date"] = pd.to_datetime(date, format="%Y-%m-%d")
+    return df
+
+
+def check_if_s3_uri(file_path: str | Path) -> bool:
+    """
+    Checks if a file path is an S3 URI.
+
+    Parameters
+    ----------
+    file_path : str | Path
+        File path to check
+
+    Returns
+    -------
+    bool
+        True if the file path is an S3 URI.
+    """
+    # "Support" pathlib Paths.
+    file_path = str(file_path)
+
+    file_scheme = urllib.parse.urlparse(file_path).scheme
+
+    valid_s3_schemes = ["s3"]
+
+    if file_scheme in valid_s3_schemes:
+        return True
+    else:
+        return False
 
 
 def check_dir_exists(dir_path: str | Path):
@@ -376,7 +320,7 @@ def find_parquet_files(path: str | Path, pattern: str = ".*") -> [str]:
         # Find Parquet files on S3.
         file_system = fsspec.filesystem("s3")
     else:
-        # Find Parquet files localy.
+        # Find Parquet files locally.
         file_system = fsspec.filesystem("file")
 
     pq_file_paths = []
@@ -426,7 +370,7 @@ def find_csv_files(path: str | Path, pattern: str = ".*") -> [str]:
         # Find CSV files on S3.
         file_system = fsspec.filesystem("s3")
     else:
-        # Find CSV files localy.
+        # Find CSV files locally.
         file_system = fsspec.filesystem("file")
 
     csv_file_paths = []
@@ -448,3 +392,54 @@ def find_csv_files(path: str | Path, pattern: str = ".*") -> [str]:
 
     _log.info(f"Found {len(csv_file_paths)} csv files.")
     return csv_file_paths
+
+
+def find_geotiff_files(path: str | Path, pattern: str = ".*") -> [str]:
+    """
+    Find GeoTIFF files matching a pattern.
+
+    Arguments
+    ---------
+    path : str | Path
+        Path (s3 or local) to search for GeoTIFF files.
+
+    pattern : str
+        Regex to match file names against.
+
+    Returns
+    -------
+    [str]
+        List of paths.
+    """
+    pattern = re.compile(pattern)
+
+    # "Support" pathlib Paths.
+    path = str(path)
+
+    if check_if_s3_uri(path):
+        # Find GeoTIFF files on S3.
+        file_system = fsspec.filesystem("s3")
+    else:
+        # Find GeoTIFF files locally.
+        file_system = fsspec.filesystem("file")
+
+    geotiff_file_paths = []
+
+    files = file_system.find(path)
+    for file in files:
+        _, file_extension = os.path.splitext(file)
+        file_extension = file_extension.lower()
+        if file_extension not in GEOTIFF_EXTENSIONS:
+            continue
+        else:
+            _, file_name = os.path.split(file)
+            if not pattern.match(file_name):
+                continue
+            else:
+                geotiff_file_paths.append(file)
+
+    if check_if_s3_uri(path):
+        geotiff_file_paths = [f"s3://{file}" for file in geotiff_file_paths]
+
+    _log.info(f"Found {len(geotiff_file_paths)} GeoTIFF files.")
+    return geotiff_file_paths
