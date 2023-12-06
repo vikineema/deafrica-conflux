@@ -28,7 +28,7 @@ def drill(
     cache: DatasetCache,
     polygon_rasters_split_by_tile_directory: str,
     dc: datacube.Datacube | None = None,
-) -> list[pd.DataFrame]:
+) -> pd.DataFrame:
     """
     Perform a polygon drill.
 
@@ -47,7 +47,7 @@ def drill(
 
     Returns
     -------
-    Drill tables : list[pd.DataFrame]
+    Drill table : pd.DataFrame
         Index = polygon ID
         Columns = output bands
     """
@@ -140,6 +140,6 @@ def drill(
         polygon_summary_df.index = [region_prop.label]
         summary_df_list.append(polygon_summary_df)
 
-    # summary_df = pd.concat(summary_df_list, ignore_index=False)
+    summary_df = pd.concat(summary_df_list, ignore_index=False)
 
-    return summary_df_list
+    return summary_df
