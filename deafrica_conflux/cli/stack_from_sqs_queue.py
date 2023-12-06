@@ -1,4 +1,3 @@
-import json
 import logging
 
 import boto3
@@ -6,7 +5,7 @@ import click
 import fsspec
 
 from deafrica_conflux.cli.logs import logging_setup
-from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3_uri
+from deafrica_conflux.io import check_dir_exists, check_if_s3_uri
 from deafrica_conflux.queues import (
     delete_batch_with_retry,
     get_queue_url,

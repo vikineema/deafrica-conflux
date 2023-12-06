@@ -192,7 +192,7 @@ def run_from_sqs_queue(
                         plugin=plugin,
                         task_id_string=task,
                         cache=cache,
-                        polygon_rasters_split_by_tile_directory=polygons_rasters_directory,
+                        polygons_rasters_directory=polygons_rasters_directory,
                         dc=dc,
                     )
                     pq_file_names = write_table_to_parquets(  # noqa F841

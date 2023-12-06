@@ -166,7 +166,7 @@ def run_from_txt(
                     plugin=plugin,
                     task_id_string=task,
                     cache=cache,
-                    polygon_rasters_split_by_tile_directory=polygons_rasters_directory,
+                    polygons_rasters_directory=polygons_rasters_directory,
                     dc=dc,
                 )
 
