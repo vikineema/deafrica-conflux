@@ -26,7 +26,7 @@ def drill(
     plugin: ModuleType,
     task_id_string: str,
     cache: DatasetCache,
-    polygon_rasters_split_by_tile_directory: str,
+    polygons_rasters_directory: str,
     dc: datacube.Datacube | None = None,
 ) -> pd.DataFrame:
     """
@@ -40,7 +40,7 @@ def drill(
         Task id to run drill on in string format.
     cache : DatasetCache
         Dataset cache to read datasets from.
-    polygon_rasters_split_by_tile_directory : str
+    polygons_rasters_directory : str
         Directory to search for polygons raster files.
     dc : datacube.Datacube | None, optional
         Optional existing Datacube., by default None
