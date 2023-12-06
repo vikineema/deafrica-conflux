@@ -63,7 +63,7 @@ def run_from_txt(
     plugin_name,
     polygons_rasters_directory,
     output_directory,
-    polygons_ids_mapping_file,
+    polygon_ids_mapping_file,
     overwrite,
 ):
     # Set up logger.
@@ -75,8 +75,8 @@ def run_from_txt(
     tasks_text_file = str(tasks_text_file)
     polygons_rasters_directory = str(polygons_rasters_directory)
     output_directory = str(output_directory)
-    if polygons_ids_mapping_file:
-        polygons_ids_mapping_file = str(polygons_ids_mapping_file)
+    if polygon_ids_mapping_file:
+        polygon_ids_mapping_file = str(polygon_ids_mapping_file)
 
     # Read the plugin as a Python module.
     module = import_module(f"deafrica_conflux.plugins.{plugin_name}")
@@ -88,10 +88,10 @@ def run_from_txt(
     # Get the drill name from the plugin
     drill_name = plugin.product_name
 
-    if polygons_ids_mapping_file:
-        if not check_file_exists(polygons_ids_mapping_file):
-            _log.error(f"File {polygons_ids_mapping_file} does not exist!")
-            raise FileNotFoundError(f"File {polygons_ids_mapping_file} does not exist!)")
+    if polygon_ids_mapping_file:
+        if not check_file_exists(polygon_ids_mapping_file):
+            _log.error(f"File {polygon_ids_mapping_file} does not exist!")
+            raise FileNotFoundError(f"File {polygon_ids_mapping_file} does not exist!)")
 
     if not check_dir_exists(polygons_rasters_directory):
         _log.error(f"Directory {polygons_rasters_directory} does not exist!")
@@ -133,16 +133,16 @@ def run_from_txt(
     _log.debug(f"Read {tasks} from file.")
 
     # Read the polygons ids mapping file.
-    if polygons_ids_mapping_file:
-        if check_if_s3_uri(polygons_ids_mapping_file):
+    if polygon_ids_mapping_file:
+        if check_if_s3_uri(polygon_ids_mapping_file):
             fs = fsspec.filesystem("s3")
         else:
             fs = fsspec.filesystem("file")
 
-        with fs.open(polygons_ids_mapping_file) as f:
-            polygons_ids_mapping = json.load(f)
+        with fs.open(polygon_ids_mapping_file) as f:
+            polygon_ids_mapping = json.load(f)
     else:
-        polygons_ids_mapping = {}
+        polygon_ids_mapping = {}
 
     # Connect to the datacube
     dc = datacube.Datacube(app="deafrica-conflux-drill")
@@ -175,7 +175,7 @@ def run_from_txt(
                     task_id_string=task,
                     table=table,
                     output_directory=output_directory,
-                    polygons_ids_mapping=polygons_ids_mapping,
+                    polygon_ids_mapping=polygon_ids_mapping,
                 )
             except KeyError as keyerr:
                 _log.exception(f"Found task {task} has KeyError: {str(keyerr)}")
