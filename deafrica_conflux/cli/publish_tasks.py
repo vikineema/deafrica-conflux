@@ -1,4 +1,5 @@
 import logging
+import time
 
 import boto3
 import click
@@ -43,7 +44,7 @@ def publish_tasks(
     task_filter,
 ):
     """
-        Publish tasks to run to SQS queue or text file.
+        Publish tasks to SQS queue or text file.
 
     \b
     Task filter can be one of the 3 things
@@ -108,6 +109,18 @@ def publish_tasks(
     if tasks_sqs_queue:
         sqs_client = boto3.client("sqs")
         tasks_sqs_queue_url = get_queue_url(queue_name=tasks_sqs_queue, sqs_client=sqs_client)
+
+        # Check if there are any messages in the queue.
+        # If there are any messages purge the queue.
+        response = sqs_client.get_queue_attributes(
+            QueueUrl=tasks_sqs_queue_url, AttributeNames=["All"]
+        )
+        if float(response["Attributes"]["ApproximateNumberOfMessages"]) > 0:
+            _log.info(f"Purging queue {tasks_sqs_queue_url}...")
+            response = sqs_client.purge_queue(QueueUrl=tasks_sqs_queue_url)
+            time.sleep(60)  # Delay for 1 minute
+            _log.info(f"Purge of queue {tasks_sqs_queue_url} is complete.")
+
         _, failed_to_push = send_batch_with_retry(
             queue_url=tasks_sqs_queue_url, messages=tasks_str, max_retries=10, sqs_client=sqs_client
         )
