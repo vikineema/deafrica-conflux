@@ -74,7 +74,7 @@ def stack_waterbodies_parquet_to_csv(
     output_directory : str | Path
         Path to output directory.
 
-    polygons_ids_mapping: bool
+    polygons_ids_mapping: dict[str, str]
         Dictionary mapping numerical polygon ids (WB_ID) to string polygon ids (UID)
     """
     # "Support" pathlib Paths.

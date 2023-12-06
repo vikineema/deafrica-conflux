@@ -12,6 +12,7 @@ import urllib
 from pathlib import Path
 
 import fsspec
+import numpy as np
 import pandas as pd
 import pyarrow
 import pyarrow.parquet
@@ -75,12 +76,13 @@ def table_exists(drill_name: str, task_id_string: str, output_directory: str) ->
     return fs.exists(path)
 
 
-def write_table_to_parquet(
+def write_table_to_parquets(
     drill_name: str,
     task_id_string: str,
     table: pd.DataFrame,
     output_directory: str | Path,
-) -> str:
+    polygons_ids_mapping: dict = {},
+) -> list[str]:
     """
     Write a table to Parquet.
 
@@ -98,41 +100,18 @@ def write_table_to_parquet(
     output_directory : str | Path
         Path to output directory.
 
+    polygons_ids_mapping: dict[str, str]
+        Dictionary mapping numerical polygon ids (WB_ID) to string polygon ids (UID)
     Returns
     -------
-    str
-        Path written to.
+    list[str]
+        Paths written to.
     """
     # "Support" pathlib Paths.
     output_directory = str(output_directory)
 
     # Parse the task id.
     period, x, y = task_id_string.split("/")
-
-    # Convert the table to pyarrow.
-    table_pa = pyarrow.Table.from_pandas(table)
-
-    # Dump new metadata to JSON.
-    meta_json = json.dumps(
-        {
-            "drill": drill_name,
-            "date": period,
-        }
-    )
-
-    # Dump existing (Pandas) metadata.
-    # https://towardsdatascience.com/
-    #   saving-metadata-with-dataframes-71f51f558d8e
-    existing_meta = table_pa.schema.metadata
-    combined_meta = {
-        PARQUET_META_KEY: meta_json.encode(),
-        **existing_meta,
-    }
-    # Replace the metadata.
-    table_pa = table_pa.replace_schema_metadata(combined_meta)
-
-    # Write the table.
-    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
 
     if check_if_s3_uri(output_directory):
         fs = fsspec.filesystem("s3")
@@ -145,12 +124,53 @@ def write_table_to_parquet(
         fs.makedirs(parent_folder, exist_ok=True)
         _log.info(f"Created directory: {parent_folder}")
 
-    output_file_path = os.path.join(parent_folder, file_name)
+    # Split each row of the table into a seperate dataframe.
+    tables = np.split(table, len(table))
+    assert len(tables) == len(table)
+    _log.info(f"For task {task_id_string} found timeseries for {len(tables)} polygons.")
 
-    pyarrow.parquet.write_table(table=table_pa, where=output_file_path, compression="GZIP")
+    output_file_paths = []
+    for table_ in tables:
+        assert len(table_) == 1
+        # Get the string unique id of the polygon
+        # if the polygons ids mapping dictionary is provided.
+        if polygons_ids_mapping:
+            uid = polygons_ids_mapping[str(table_.index[0])]
+            table_.index = [uid]
+        else:
+            uid = str(table_.index[0])
 
-    _log.info(f"Table written to {output_file_path}")
-    return output_file_path
+        # Convert the table to pyarrow.
+        table_pa = pyarrow.Table.from_pandas(table)
+
+        # Dump new metadata to JSON.
+        meta_json = json.dumps(
+            {
+                "drill": drill_name,
+                "date": period,
+            }
+        )
+
+        # Dump existing (Pandas) metadata.
+        # https://towardsdatascience.com/
+        #   saving-metadata-with-dataframes-71f51f558d8e
+        existing_meta = table_pa.schema.metadata
+        combined_meta = {
+            PARQUET_META_KEY: meta_json.encode(),
+            **existing_meta,
+        }
+        # Replace the metadata.
+        table_pa = table_pa.replace_schema_metadata(combined_meta)
+
+        # Write the table.
+        file_name = make_parquet_file_name(
+            drill_name=drill_name, task_id_string=task_id_string, uid=uid
+        )
+        output_file_path = os.path.join(parent_folder, file_name)
+        pyarrow.parquet.write_table(table=table_pa, where=output_file_path, compression="GZIP")
+        _log.info(f"Table written to {output_file_path}")
+        output_file_paths.append[output_file_paths]
+    return output_file_paths
 
 
 def read_table_from_parquet(path: str | Path) -> pd.DataFrame:
