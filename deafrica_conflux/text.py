@@ -2,7 +2,7 @@
 import os
 
 
-def make_parquet_file_name(drill_name: str, task_id_string: str, uid: str = "") -> str:
+def make_parquet_file_name(drill_name: str, task_id_string: str, uid: str) -> str:
     """
     Make filename for Parquet.
 
@@ -24,10 +24,7 @@ def make_parquet_file_name(drill_name: str, task_id_string: str, uid: str = "") 
     # Parse the task id.
     period, x, y = task_id_string.split("/")
 
-    if uid:
-        parquet_file_name = f"{drill_name}_x{x}y{y}_{period}_{uid}.pq"
-    else:
-        parquet_file_name = f"{drill_name}_x{x}y{y}_{period}.pq"
+    parquet_file_name = f"{drill_name}_x{x}y{y}_{period}_{uid}.pq"
 
     return parquet_file_name
 
