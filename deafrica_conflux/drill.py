@@ -77,7 +77,8 @@ def drill(
     _log.info("Finding polygon raster tile....")
     search_pattern = f".*x{task_id_tuple[1]:03d}_y{task_id_tuple[2]:03d}.*"
     found_raster_tile = find_geotiff_files(
-        path=polygon_rasters_split_by_tile_directory, pattern=search_pattern
+        path=polygons_rasters_directory,
+        pattern=search_pattern,
     )
     # The should only be one polygons raster file  for each tile.
     assert len(found_raster_tile) == 1
