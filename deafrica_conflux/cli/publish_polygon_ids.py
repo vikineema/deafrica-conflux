@@ -22,7 +22,7 @@ from deafrica_conflux.queues import get_queue_url, send_batch_with_retry
     help="SQS Queue to publish the polygons ids to.",
 )
 @click.option(
-    "--polygons-ids-mapping-file",
+    "--polygon-ids-mapping-file",
     type=str,
     help="JSON file mapping numerical polygons ids (WB_ID) to string polygons ids (UID).",
 )
