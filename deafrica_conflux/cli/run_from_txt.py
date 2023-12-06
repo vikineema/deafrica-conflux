@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from importlib import import_module
@@ -131,6 +132,18 @@ def run_from_txt(
     _log.info(f"Read {len(tasks)} tasks from file.")
     _log.debug(f"Read {tasks} from file.")
 
+    # Read the polygons ids mapping file.
+    if polygons_ids_mapping_file:
+        if check_if_s3_uri(polygons_ids_mapping_file):
+            fs = fsspec.filesystem("s3")
+        else:
+            fs = fsspec.filesystem("file")
+
+        with fs.open(polygons_ids_mapping_file) as f:
+            polygons_ids_mapping = json.load(f)
+    else:
+        polygons_ids_mapping = {}
+
     # Connect to the datacube
     dc = datacube.Datacube(app="deafrica-conflux-drill")
 
@@ -162,6 +175,7 @@ def run_from_txt(
                     task_id_string=task,
                     table=table,
                     output_directory=output_directory,
+                    polygons_ids_mapping=polygons_ids_mapping,
                 )
             except KeyError as keyerr:
                 _log.exception(f"Found task {task} has KeyError: {str(keyerr)}")
