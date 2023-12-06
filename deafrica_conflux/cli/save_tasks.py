@@ -198,7 +198,9 @@ def save_tasks(
     # Find the required tiles.
     _log.info(f"Total bins: {len(cells):d}")
     _log.info("Filtering bins by required tiles...")
-    geotiff_files = find_geotiff_files(path=polygons_rasters_directory, pattern=pattern)
+    geotiff_files = find_geotiff_files(
+        path=polygons_rasters_directory, pattern=pattern, verbose=False
+    )
 
     tiles_ids = [parse_tile_ids(file) for file in geotiff_files]
     _log.info(f"Found {len(tiles_ids)} tiles.")
@@ -208,9 +210,11 @@ def save_tasks(
     cells = {k: v for k, v in cells.items() if k in tiles_ids}
     _log.info(f"Total bins: {len(cells):d}")
 
+    _log.info("For each bin, group datasets by solar day.")
     tasks = bin_solar_day(cells)
+    _log.info(f"Total tasks: {len(tasks)}")
 
-    # Remove duplicate source uuids.
+    _log.info("Removing duplicate source uuids...")
     # Duplicates occur when queried datasets are captured around UTC midnight
     # and around weekly boundary
     tasks = {k: set(dss) for k, dss in tasks.items()}
@@ -220,7 +224,7 @@ def save_tasks(
     all_ids = set()
     for k, dss in tasks_uuid.items():
         all_ids.update(dss)
-    _log.info(f"Total of {len(all_ids):,d} unique dataset IDs after filtering")
+    _log.info(f"Total of {len(all_ids):,d} unique dataset IDs after filtering.")
 
     label = f"Saving {len(tasks)} tasks to disk"
     with tqdm(tasks_uuid.items(), desc=label, total=len(tasks_uuid)) as groups:
@@ -238,7 +242,6 @@ def save_tasks(
 
     # pylint:disable=too-many-locals
     csv_path = os.path.join(output_directory, f"{product}_{temporal_range_.short}.csv")
-    _log.info(f"Writing summary to {csv_path}")
     with fs.open(csv_path, "wt", encoding="utf8") as f:
         f.write('"T","X","Y","datasets","days"\n')
         for p, x, y in sorted(tasks):
@@ -247,3 +250,4 @@ def save_tasks(
             n_days = len(set(ds.time.date() for ds in dss))
             line = f'"{p}", {x:+05d}, {y:+05d}, {n_dss:4d}, {n_days:4d}\n'
             f.write(line)
+    _log.info(f"Written summary to {csv_path}")
