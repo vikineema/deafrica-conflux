@@ -157,11 +157,11 @@ def rasterise_polygons(
     string_id = guess_id_field(input_gdf=polygons_gdf, use_id=string_id)
     assert is_string_dtype(polygons_gdf[string_id])
 
-    polygons_ids_mapping = dict(zip(polygons_gdf[numerical_id], polygons_gdf[string_id]))
-    polygons_ids_mapping_fp = os.path.join(rasters_output_directory, "polygons_ids_mapping.json")
-    with fs.open(polygons_ids_mapping_fp, "w") as fp:
-        json.dump(polygons_ids_mapping, fp)
-    _log.info(f"Polygos IDs dictionary written to {polygons_ids_mapping_fp}")
+    polygon_ids_mapping = dict(zip(polygons_gdf[numerical_id], polygons_gdf[string_id]))
+    polygon_ids_mapping_fp = os.path.join(rasters_output_directory, "polygon_ids_mapping.json")
+    with fs.open(polygon_ids_mapping_fp, "w") as fp:
+        json.dump(polygon_ids_mapping, fp)
+    _log.info(f"Polygos IDs dictionary written to {polygon_ids_mapping_fp}")
 
     _log.info("Filtering out tiles that do not intersect with any polygon...")
     filtered_tiles_gdf = get_intersecting_polygons(

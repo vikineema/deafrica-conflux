@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from importlib import import_module
@@ -15,8 +16,8 @@ from deafrica_conflux.io import (
     check_dir_exists,
     check_file_exists,
     check_if_s3_uri,
-    table_exists,
-    write_table_to_parquet,
+    tables_exist,
+    write_table_to_parquets,
 )
 from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
 
@@ -46,14 +47,14 @@ from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
 )
 @click.option("--output-directory", type=str, help="Directory to write the drill outputs to.")
 @click.option(
+    "--polygons-ids-mapping-file",
+    type=str,
+    help="JSON file mapping numerical polygons ids (WB_ID) to string polygons ids (UID).",
+)
+@click.option(
     "--overwrite/--no-overwrite",
     default=False,
     help="Rerun tasks that have already been processed.",
-)
-@click.option(
-    "--dump-empty-dataframe/--not-dump-empty-dataframe",
-    default=False,
-    help="Not matter DataFrame is empty or not, always as it as Parquet file.",
 )
 def run_from_txt(
     verbose,
@@ -62,8 +63,8 @@ def run_from_txt(
     plugin_name,
     polygons_rasters_directory,
     output_directory,
+    polygon_ids_mapping_file,
     overwrite,
-    dump_empty_dataframe,
 ):
     # Set up logger.
     logging_setup(verbose)
@@ -74,6 +75,8 @@ def run_from_txt(
     tasks_text_file = str(tasks_text_file)
     polygons_rasters_directory = str(polygons_rasters_directory)
     output_directory = str(output_directory)
+    if polygon_ids_mapping_file:
+        polygon_ids_mapping_file = str(polygon_ids_mapping_file)
 
     # Read the plugin as a Python module.
     module = import_module(f"deafrica_conflux.plugins.{plugin_name}")
@@ -84,6 +87,11 @@ def run_from_txt(
 
     # Get the drill name from the plugin
     drill_name = plugin.product_name
+
+    if polygon_ids_mapping_file:
+        if not check_file_exists(polygon_ids_mapping_file):
+            _log.error(f"File {polygon_ids_mapping_file} does not exist!")
+            raise FileNotFoundError(f"File {polygon_ids_mapping_file} does not exist!)")
 
     if not check_dir_exists(polygons_rasters_directory):
         _log.error(f"Directory {polygons_rasters_directory} does not exist!")
@@ -124,6 +132,18 @@ def run_from_txt(
     _log.info(f"Read {len(tasks)} tasks from file.")
     _log.debug(f"Read {tasks} from file.")
 
+    # Read the polygons ids mapping file.
+    if polygon_ids_mapping_file:
+        if check_if_s3_uri(polygon_ids_mapping_file):
+            fs = fsspec.filesystem("s3")
+        else:
+            fs = fsspec.filesystem("file")
+
+        with fs.open(polygon_ids_mapping_file) as f:
+            polygon_ids_mapping = json.load(f)
+    else:
+        polygon_ids_mapping = {}
+
     # Connect to the datacube
     dc = datacube.Datacube(app="deafrica-conflux-drill")
 
@@ -134,10 +154,9 @@ def run_from_txt(
     for i, task in enumerate(tasks):
         _log.info(f"Processing task {task} ({i + 1}/{len(tasks)})")
 
-        # Get the tasks output file name.
         if not overwrite:
             _log.info(f"Checking existence of {task}")
-            exists = table_exists(
+            exists = tables_exist(
                 drill_name=drill_name, task_id_string=task, output_directory=output_directory
             )
         if overwrite or not exists:
@@ -147,17 +166,17 @@ def run_from_txt(
                     plugin=plugin,
                     task_id_string=task,
                     cache=cache,
-                    polygon_rasters_split_by_tile_directory=polygons_rasters_directory,
+                    polygons_rasters_directory=polygons_rasters_directory,
                     dc=dc,
                 )
-                # Write the table to a parquet file.
-                if (dump_empty_dataframe) or (not table.empty):
-                    pq_file_name = write_table_to_parquet(  # noqa F841
-                        drill_name=drill_name,
-                        task_id_string=task,
-                        table=table,
-                        output_directory=output_directory,
-                    )
+
+                pq_file_names = write_table_to_parquets(  # noqa F841
+                    drill_name=drill_name,
+                    task_id_string=task,
+                    table=table,
+                    output_directory=output_directory,
+                    polygon_ids_mapping=polygon_ids_mapping,
+                )
             except KeyError as keyerr:
                 _log.exception(f"Found task {task} has KeyError: {str(keyerr)}")
                 failed_tasks = [].append(task)
@@ -173,7 +192,7 @@ def run_from_txt(
             else:
                 _log.info(f"Task {task} successful")
         else:
-            _log.info(f"Drill output for {task} already exists, skipping")
+            _log.info(f"Drill outputs for {task} already exist, skipping")
 
         if failed_tasks:
             # Write the failed dataset ids to a text file.

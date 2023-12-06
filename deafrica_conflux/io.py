@@ -12,6 +12,7 @@ import urllib
 from pathlib import Path
 
 import fsspec
+import numpy as np
 import pandas as pd
 import pyarrow
 import pyarrow.parquet
@@ -33,9 +34,9 @@ GEOTIFF_EXTENSIONS = {".tif", ".tiff", ".gtiff"}
 PARQUET_META_KEY = b"conflux.metadata"
 
 
-def table_exists(drill_name: str, task_id_string: str, output_directory: str) -> bool:
+def tables_exist(drill_name: str, task_id_string: str, output_directory: str) -> bool:
     """
-    Check whether a table already exists.
+    Check whether tables for  a specific task exist.
 
     Arguments
     ---------
@@ -55,34 +56,32 @@ def table_exists(drill_name: str, task_id_string: str, output_directory: str) ->
     # "Support" pathlib Paths.
     output_directory = str(output_directory)
 
-    if check_if_s3_uri(output_directory):
-        fs = fsspec.filesystem("s3")
-    else:
-        fs = fsspec.filesystem("file")
-
-    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
-
     # Parse the task id.
     period, x, y = task_id_string.split("/")
 
-    path = os.path.join(output_directory, period, file_name)
+    task_output_files = find_parquet_files(
+        path=output_directory, pattern=f".*{drill_name}_x{x}y{y}_{period}.*", verbose=False
+    )
 
-    if fs.exists(path):
-        _log.info(f"{path} exists.")
+    if len(task_output_files) > 0:
+        exists = True
+        _log.info(f"Drill output parquet files for task {task_id_string} exist.")
     else:
-        _log.info(f"{path} does not exist.")
+        exists = False
+        _log.info(f"Drill output parquet files for task {task_id_string} do not exist.")
 
-    return fs.exists(path)
+    return exists
 
 
-def write_table_to_parquet(
+def write_table_to_parquets(
     drill_name: str,
     task_id_string: str,
     table: pd.DataFrame,
     output_directory: str | Path,
-) -> str:
+    polygon_ids_mapping: dict = {},
+) -> list[str]:
     """
-    Write a table to Parquet.
+    Write a table to parquet files.
 
     Arguments
     ---------
@@ -98,41 +97,18 @@ def write_table_to_parquet(
     output_directory : str | Path
         Path to output directory.
 
+    polygon_ids_mapping: dict[str, str]
+        Dictionary mapping numerical polygon ids (WB_ID) to string polygon ids (UID)
     Returns
     -------
-    str
-        Path written to.
+    list[str]
+        Paths written to.
     """
     # "Support" pathlib Paths.
     output_directory = str(output_directory)
 
     # Parse the task id.
     period, x, y = task_id_string.split("/")
-
-    # Convert the table to pyarrow.
-    table_pa = pyarrow.Table.from_pandas(table)
-
-    # Dump new metadata to JSON.
-    meta_json = json.dumps(
-        {
-            "drill": drill_name,
-            "date": period,
-        }
-    )
-
-    # Dump existing (Pandas) metadata.
-    # https://towardsdatascience.com/
-    #   saving-metadata-with-dataframes-71f51f558d8e
-    existing_meta = table_pa.schema.metadata
-    combined_meta = {
-        PARQUET_META_KEY: meta_json.encode(),
-        **existing_meta,
-    }
-    # Replace the metadata.
-    table_pa = table_pa.replace_schema_metadata(combined_meta)
-
-    # Write the table.
-    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
 
     if check_if_s3_uri(output_directory):
         fs = fsspec.filesystem("s3")
@@ -145,12 +121,53 @@ def write_table_to_parquet(
         fs.makedirs(parent_folder, exist_ok=True)
         _log.info(f"Created directory: {parent_folder}")
 
-    output_file_path = os.path.join(parent_folder, file_name)
+    # Split each row of the table into a seperate dataframe.
+    tables = np.split(table, len(table))
+    assert len(tables) == len(table)
+    _log.info(f"For task {task_id_string} found timeseries for {len(tables)} polygons.")
 
-    pyarrow.parquet.write_table(table=table_pa, where=output_file_path, compression="GZIP")
+    output_file_paths = []
+    for table_ in tables:
+        assert len(table_) == 1
+        # Get the string unique id of the polygon
+        # if the polygons ids mapping dictionary is provided.
+        if polygon_ids_mapping:
+            uid = polygon_ids_mapping[str(table_.index[0])]
+            table_.index = [uid]
+        else:
+            uid = str(table_.index[0])
 
-    _log.info(f"Table written to {output_file_path}")
-    return output_file_path
+        # Convert the table to pyarrow.
+        table_pa = pyarrow.Table.from_pandas(table_)
+
+        # Dump new metadata to JSON.
+        meta_json = json.dumps(
+            {
+                "drill": drill_name,
+                "date": period,
+            }
+        )
+
+        # Dump existing (Pandas) metadata.
+        # https://towardsdatascience.com/
+        #   saving-metadata-with-dataframes-71f51f558d8e
+        existing_meta = table_pa.schema.metadata
+        combined_meta = {
+            PARQUET_META_KEY: meta_json.encode(),
+            **existing_meta,
+        }
+        # Replace the metadata.
+        table_pa = table_pa.replace_schema_metadata(combined_meta)
+
+        # Write the table.
+        file_name = make_parquet_file_name(
+            drill_name=drill_name, task_id_string=task_id_string, uid=uid
+        )
+        output_file_path = os.path.join(parent_folder, file_name)
+        pyarrow.parquet.write_table(table=table_pa, where=output_file_path, compression="GZIP")
+        _log.info(f"Table written to {output_file_path}")
+        output_file_paths.append(output_file_path)
+    return output_file_paths
 
 
 def read_table_from_parquet(path: str | Path) -> pd.DataFrame:
@@ -294,7 +311,7 @@ def check_file_exists(file_path: str | Path) -> bool:
         return False
 
 
-def find_parquet_files(path: str | Path, pattern: str = ".*") -> [str]:
+def find_parquet_files(path: str | Path, pattern: str = ".*", verbose: bool = True) -> [str]:
     """
     Find Parquet files matching a pattern.
 
@@ -305,6 +322,9 @@ def find_parquet_files(path: str | Path, pattern: str = ".*") -> [str]:
 
     pattern : str
         Regex to match file names against.
+
+    verbose: bool
+        Turn on/off logging.
 
     Returns
     -------
@@ -340,11 +360,12 @@ def find_parquet_files(path: str | Path, pattern: str = ".*") -> [str]:
     if check_if_s3_uri(path):
         pq_file_paths = [f"s3://{file}" for file in pq_file_paths]
 
-    _log.info(f"Found {len(pq_file_paths)} parquet files.")
+    if verbose:
+        _log.info(f"Found {len(pq_file_paths)} parquet files.")
     return pq_file_paths
 
 
-def find_csv_files(path: str | Path, pattern: str = ".*") -> [str]:
+def find_csv_files(path: str | Path, pattern: str = ".*", verbose: bool = True) -> [str]:
     """
     Find CSV files matching a pattern.
 
@@ -356,6 +377,8 @@ def find_csv_files(path: str | Path, pattern: str = ".*") -> [str]:
     pattern : str
         Regex to match file names against.
 
+    verbose: bool
+        Turn on/off logging.
     Returns
     -------
     [str]
@@ -390,11 +413,12 @@ def find_csv_files(path: str | Path, pattern: str = ".*") -> [str]:
     if check_if_s3_uri(path):
         csv_file_paths = [f"s3://{file}" for file in csv_file_paths]
 
-    _log.info(f"Found {len(csv_file_paths)} csv files.")
+    if verbose:
+        _log.info(f"Found {len(csv_file_paths)} csv files.")
     return csv_file_paths
 
 
-def find_geotiff_files(path: str | Path, pattern: str = ".*") -> [str]:
+def find_geotiff_files(path: str | Path, pattern: str = ".*", verbose: bool = True) -> [str]:
     """
     Find GeoTIFF files matching a pattern.
 
@@ -405,6 +429,9 @@ def find_geotiff_files(path: str | Path, pattern: str = ".*") -> [str]:
 
     pattern : str
         Regex to match file names against.
+
+    verbose: bool
+        Turn on/off logging.
 
     Returns
     -------
@@ -441,5 +468,6 @@ def find_geotiff_files(path: str | Path, pattern: str = ".*") -> [str]:
     if check_if_s3_uri(path):
         geotiff_file_paths = [f"s3://{file}" for file in geotiff_file_paths]
 
-    _log.info(f"Found {len(geotiff_file_paths)} GeoTIFF files.")
+    if verbose:
+        _log.info(f"Found {len(geotiff_file_paths)} GeoTIFF files.")
     return geotiff_file_paths

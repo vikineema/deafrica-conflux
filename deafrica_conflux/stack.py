@@ -7,7 +7,6 @@ Geoscience Australia
 2021
 """
 
-import collections
 import logging
 import os
 from pathlib import Path
@@ -15,9 +14,13 @@ from pathlib import Path
 import fsspec
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
-from deafrica_conflux.io import check_dir_exists, check_if_s3_uri, load_parquet_file
+from deafrica_conflux.io import (
+    check_dir_exists,
+    check_if_s3_uri,
+    find_parquet_files,
+    load_parquet_file,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -59,54 +62,32 @@ def update_timeseries(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def stack_waterbodies_parquet_to_csv(
-    parquet_file_paths: [str | Path],
-    output_directory: str | Path,
-    polygons_ids_mapping: dict[str, str],
+    polygon_id: str, drill_output_directory: str | Path, output_directory: str | Path
 ):
-    """
-    Stack Parquet files into CSVs.
-
-    Arguments
-    ---------
-    parquet_file_paths : [str | Path]
-        List of paths to Parquet files to stack.
-
-    output_directory : str | Path
-        Path to output directory.
-
-    polygons_ids_mapping: bool
-        Dictionary mapping numerical polygon ids (WB_ID) to string polygon ids (UID)
-    """
-    # "Support" pathlib Paths.
-    parquet_file_paths = [str(pq_file_path) for pq_file_path in parquet_file_paths]
+    # Support pathlib paths.
+    drill_outputs_directory = str(drill_output_directory)
     output_directory = str(output_directory)
 
-    assert polygons_ids_mapping
+    _log.info(f"Stacking timeseries for polygon {polygon_id}")
+    # Find drill output files for the polygon.
+    pq_files = find_parquet_files(
+        path=drill_outputs_directory, pattern=f".*{polygon_id}.*", verbose=False
+    )
 
-    # id -> [series of date x bands]
-    id_to_series = collections.defaultdict(list)
-    n_total = len(parquet_file_paths)
-    label = f"Reading {n_total} drill output parquet files."
-    with tqdm(parquet_file_paths, desc=label, total=n_total) as parquet_file_paths:
-        for pq_file_path in parquet_file_paths:
-            df = load_parquet_file(pq_file_path)
-            # df is ids x bands
-            # for each ID...
-            for uid, series in df.iterrows():
-                series.name = series.date
-                uid = polygons_ids_mapping[str(uid)]
-                id_to_series[uid].append(series)
+    if not pq_files:
+        _log.info(f"Found 0 drill output parquet files for polygon {polygon_id}")
+    else:
+        _log.info(f"Found {len(pq_files)} drill output parquet files for polygon {polygon_id}")
+        df_list = []
+        for file in pq_files:
+            file_df = load_parquet_file(file)
+            df_list.append(file_df)
+        df = pd.concat(df_list, ignore_index=False)
+        df = df.set_index(df["date"])
+        df = update_timeseries(df)
 
-    n_total = len(id_to_series.items())
-    for i, item in enumerate(id_to_series.items()):
-        uid, seriess = item
-        _log.info(f"Writing csv file for polygon {uid} ({i + 1}/{n_total})")
-
-        df = pd.DataFrame(seriess)
-        df = update_timeseries(df=df)
-
-        output_file_parent_directory = os.path.join(output_directory, f"{uid[:4]}")
-        output_file_path = os.path.join(output_file_parent_directory, f"{uid}.csv")
+        output_file_parent_directory = os.path.join(output_directory, f"{polygon_id[:4]}")
+        output_file_path = os.path.join(output_file_parent_directory, f"{polygon_id}.csv")
 
         if check_if_s3_uri(output_file_parent_directory):
             fs = fsspec.filesystem("s3")

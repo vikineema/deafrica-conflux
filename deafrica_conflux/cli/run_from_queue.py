@@ -1,3 +1,4 @@
+import json
 import logging
 from importlib import import_module
 
@@ -15,8 +16,8 @@ from deafrica_conflux.io import (
     check_dir_exists,
     check_file_exists,
     check_if_s3_uri,
-    table_exists,
-    write_table_to_parquet,
+    tables_exist,
+    write_table_to_parquets,
 )
 from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
 from deafrica_conflux.queues import (
@@ -52,14 +53,14 @@ from deafrica_conflux.queues import (
 )
 @click.option("--output-directory", type=str, help="Directory to write the drill outputs to.")
 @click.option(
+    "--polygon-ids-mapping-file",
+    type=str,
+    help="JSON file mapping numerical polygon ids (WB_ID) to string polygon ids (UID).",
+)
+@click.option(
     "--overwrite/--no-overwrite",
     default=False,
     help="Rerun tasks that have already been processed.",
-)
-@click.option(
-    "--dump-empty-dataframe/--not-dump-empty-dataframe",
-    default=False,
-    help="Not matter DataFrame is empty or not, always as it as Parquet file.",
 )
 def run_from_sqs_queue(
     verbose,
@@ -68,8 +69,8 @@ def run_from_sqs_queue(
     plugin_name,
     polygons_rasters_directory,
     output_directory,
+    polygon_ids_mapping_file,
     overwrite,
-    dump_empty_dataframe,
 ):
     """
     Run deafrica-conflux on dataset ids from an SQS queue.
@@ -82,6 +83,8 @@ def run_from_sqs_queue(
     cachedb_file_path = str(cachedb_file_path)
     polygons_rasters_directory = str(polygons_rasters_directory)
     output_directory = str(output_directory)
+    if polygon_ids_mapping_file:
+        polygon_ids_mapping_file = str(polygon_ids_mapping_file)
 
     # Read the plugin as a Python module.
     module = import_module(f"deafrica_conflux.plugins.{plugin_name}")
@@ -92,6 +95,11 @@ def run_from_sqs_queue(
 
     # Get the drill name from the plugin
     drill_name = plugin.product_name
+
+    if polygon_ids_mapping_file:
+        if not check_file_exists(polygon_ids_mapping_file):
+            _log.error(f"File {polygon_ids_mapping_file} does not exist!")
+            raise FileNotFoundError(f"File {polygon_ids_mapping_file} does not exist!)")
 
     if not check_dir_exists(polygons_rasters_directory):
         _log.error(f"Directory {polygons_rasters_directory} does not exist!")
@@ -116,6 +124,18 @@ def run_from_sqs_queue(
                 raise FileNotFoundError(
                     f"{cachedb_file_path} does not exist! File did not download."
                 )
+
+    # Read the polygons ids mapping file.
+    if polygon_ids_mapping_file:
+        if check_if_s3_uri(polygon_ids_mapping_file):
+            fs = fsspec.filesystem("s3")
+        else:
+            fs = fsspec.filesystem("file")
+
+        with fs.open(polygon_ids_mapping_file) as f:
+            polygon_ids_mapping = json.load(f)
+    else:
+        polygon_ids_mapping = {}
 
     # Create the service client.
     sqs_client = boto3.client("sqs")
@@ -162,7 +182,7 @@ def run_from_sqs_queue(
 
             if not overwrite:
                 _log.info(f"Checking existence of {task}")
-                exists = table_exists(
+                exists = tables_exist(
                     drill_name=drill_name, task_id_string=task, output_directory=output_directory
                 )
             if overwrite or not exists:
@@ -172,17 +192,16 @@ def run_from_sqs_queue(
                         plugin=plugin,
                         task_id_string=task,
                         cache=cache,
-                        polygon_rasters_split_by_tile_directory=polygons_rasters_directory,
+                        polygons_rasters_directory=polygons_rasters_directory,
                         dc=dc,
                     )
-                    # Write the table to a parquet file.
-                    if (dump_empty_dataframe) or (not table.empty):
-                        pq_file_name = write_table_to_parquet(  # noqa F841
-                            drill_name=drill_name,
-                            task_id_string=task,
-                            table=table,
-                            output_directory=output_directory,
-                        )
+                    pq_file_names = write_table_to_parquets(  # noqa F841
+                        drill_name=drill_name,
+                        task_id_string=task,
+                        table=table,
+                        output_directory=output_directory,
+                        polygon_ids_mapping=polygon_ids_mapping,
+                    )
                 except KeyError as keyerr:
                     _log.exception(f"Found task {task} has KeyError: {str(keyerr)}")
                     _log.error(f"Moving {task} to deadletter queue {dead_letter_queue_url}")
