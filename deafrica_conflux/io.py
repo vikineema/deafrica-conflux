@@ -78,7 +78,7 @@ def write_table_to_parquets(
     task_id_string: str,
     table: pd.DataFrame,
     output_directory: str | Path,
-    polygons_ids_mapping: dict = {},
+    polygon_ids_mapping: dict = {},
 ) -> list[str]:
     """
     Write a table to parquet files.
@@ -97,7 +97,7 @@ def write_table_to_parquets(
     output_directory : str | Path
         Path to output directory.
 
-    polygons_ids_mapping: dict[str, str]
+    polygon_ids_mapping: dict[str, str]
         Dictionary mapping numerical polygon ids (WB_ID) to string polygon ids (UID)
     Returns
     -------
@@ -131,8 +131,8 @@ def write_table_to_parquets(
         assert len(table_) == 1
         # Get the string unique id of the polygon
         # if the polygons ids mapping dictionary is provided.
-        if polygons_ids_mapping:
-            uid = polygons_ids_mapping[str(table_.index[0])]
+        if polygon_ids_mapping:
+            uid = polygon_ids_mapping[str(table_.index[0])]
             table_.index = [uid]
         else:
             uid = str(table_.index[0])

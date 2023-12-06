@@ -9,7 +9,7 @@ from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3
 from deafrica_conflux.stack import stack_waterbodies_parquet_to_csv
 
 
-@click.command("stack-from-file", no_args_is_help=True)
+@click.command("stack-from-json", no_args_is_help=True)
 @click.option("-v", "--verbose", default=1, count=True)
 @click.option(
     "--drill-output-directory",
@@ -31,7 +31,7 @@ def stack_from_json(verbose, drill_output_directory, output_directory, polygon_i
     """
     \b
     Stack outputs of deafrica-conflux into csv formats
-    using polygon ids from JSON file.
+    using polygon ids from a JSON file.
     """
     # Set up logger.
     logging_setup(verbose)

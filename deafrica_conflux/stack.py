@@ -62,10 +62,10 @@ def update_timeseries(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def stack_waterbodies_parquet_to_csv(
-    polygon_id: str, drill_outputs_directory: str | Path, output_directory: str | Path
+    polygon_id: str, drill_output_directory: str | Path, output_directory: str | Path
 ):
     # Support pathlib paths.
-    drill_outputs_directory = str(drill_outputs_directory)
+    drill_outputs_directory = str(drill_output_directory)
     output_directory = str(output_directory)
 
     _log.info(f"Stacking timeseries for polygon {polygon_id}")
