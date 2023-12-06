@@ -138,7 +138,7 @@ def write_table_to_parquets(
             uid = str(table_.index[0])
 
         # Convert the table to pyarrow.
-        table_pa = pyarrow.Table.from_pandas(table)
+        table_pa = pyarrow.Table.from_pandas(table_)
 
         # Dump new metadata to JSON.
         meta_json = json.dumps(
