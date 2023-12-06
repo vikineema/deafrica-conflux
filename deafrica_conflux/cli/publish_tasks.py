@@ -44,7 +44,7 @@ def publish_tasks(
     task_filter,
 ):
     """
-        Publish tasks to run to SQS queue or text file.
+        Publish tasks to SQS queue or text file.
 
     \b
     Task filter can be one of the 3 things
