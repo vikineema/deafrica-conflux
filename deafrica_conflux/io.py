@@ -166,7 +166,7 @@ def write_table_to_parquets(
         output_file_path = os.path.join(parent_folder, file_name)
         pyarrow.parquet.write_table(table=table_pa, where=output_file_path, compression="GZIP")
         _log.info(f"Table written to {output_file_path}")
-        output_file_paths.append[output_file_paths]
+        output_file_paths.append(output_file_path)
     return output_file_paths
 
 
