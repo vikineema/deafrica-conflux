@@ -34,9 +34,9 @@ GEOTIFF_EXTENSIONS = {".tif", ".tiff", ".gtiff"}
 PARQUET_META_KEY = b"conflux.metadata"
 
 
-def table_exists(drill_name: str, task_id_string: str, output_directory: str) -> bool:
+def tables_exist(drill_name: str, task_id_string: str, output_directory: str) -> bool:
     """
-    Check whether a table already exists.
+    Check whether tables for  a specific task exist.
 
     Arguments
     ---------
@@ -68,7 +68,7 @@ def table_exists(drill_name: str, task_id_string: str, output_directory: str) ->
         _log.info(f"Drill output parquet files for task {task_id_string} exist.")
     else:
         exists = False
-        _log.info(f"No drill output parquet files for task {task_id_string} exist.")
+        _log.info(f"Drill output parquet files for task {task_id_string} do not exist.")
 
     return exists
 
@@ -81,7 +81,7 @@ def write_table_to_parquets(
     polygons_ids_mapping: dict = {},
 ) -> list[str]:
     """
-    Write a table to Parquet.
+    Write a table to parquet files.
 
     Arguments
     ---------
