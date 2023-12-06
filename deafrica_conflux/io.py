@@ -56,24 +56,21 @@ def table_exists(drill_name: str, task_id_string: str, output_directory: str) ->
     # "Support" pathlib Paths.
     output_directory = str(output_directory)
 
-    if check_if_s3_uri(output_directory):
-        fs = fsspec.filesystem("s3")
-    else:
-        fs = fsspec.filesystem("file")
-
-    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
-
     # Parse the task id.
     period, x, y = task_id_string.split("/")
 
-    path = os.path.join(output_directory, period, file_name)
+    task_output_files = find_parquet_files(
+        path=output_directory, pattern=f".*{drill_name}_x{x}y{y}_{period}.*", verbose=False
+    )
 
-    if fs.exists(path):
-        _log.info(f"{path} exists.")
+    if len(task_output_files) > 0:
+        exists = True
+        _log.info(f"Drill output parquet files for task {task_id_string} exist.")
     else:
-        _log.info(f"{path} does not exist.")
+        exists = False
+        _log.info(f"No drill output parquet files for task {task_id_string} exist.")
 
-    return fs.exists(path)
+    return exists
 
 
 def write_table_to_parquets(
@@ -314,7 +311,7 @@ def check_file_exists(file_path: str | Path) -> bool:
         return False
 
 
-def find_parquet_files(path: str | Path, pattern: str = ".*") -> [str]:
+def find_parquet_files(path: str | Path, pattern: str = ".*", verbose: bool = True) -> [str]:
     """
     Find Parquet files matching a pattern.
 
@@ -325,6 +322,9 @@ def find_parquet_files(path: str | Path, pattern: str = ".*") -> [str]:
 
     pattern : str
         Regex to match file names against.
+
+    verbose: bool
+        Turn on/off logging.
 
     Returns
     -------
@@ -360,11 +360,12 @@ def find_parquet_files(path: str | Path, pattern: str = ".*") -> [str]:
     if check_if_s3_uri(path):
         pq_file_paths = [f"s3://{file}" for file in pq_file_paths]
 
-    _log.info(f"Found {len(pq_file_paths)} parquet files.")
+    if verbose:
+        _log.info(f"Found {len(pq_file_paths)} parquet files.")
     return pq_file_paths
 
 
-def find_csv_files(path: str | Path, pattern: str = ".*") -> [str]:
+def find_csv_files(path: str | Path, pattern: str = ".*", verbose: bool = True) -> [str]:
     """
     Find CSV files matching a pattern.
 
@@ -376,6 +377,8 @@ def find_csv_files(path: str | Path, pattern: str = ".*") -> [str]:
     pattern : str
         Regex to match file names against.
 
+    verbose: bool
+        Turn on/off logging.
     Returns
     -------
     [str]
@@ -410,11 +413,12 @@ def find_csv_files(path: str | Path, pattern: str = ".*") -> [str]:
     if check_if_s3_uri(path):
         csv_file_paths = [f"s3://{file}" for file in csv_file_paths]
 
-    _log.info(f"Found {len(csv_file_paths)} csv files.")
+    if verbose:
+        _log.info(f"Found {len(csv_file_paths)} csv files.")
     return csv_file_paths
 
 
-def find_geotiff_files(path: str | Path, pattern: str = ".*") -> [str]:
+def find_geotiff_files(path: str | Path, pattern: str = ".*", verbose: bool = True) -> [str]:
     """
     Find GeoTIFF files matching a pattern.
 
@@ -425,6 +429,9 @@ def find_geotiff_files(path: str | Path, pattern: str = ".*") -> [str]:
 
     pattern : str
         Regex to match file names against.
+
+    verbose: bool
+        Turn on/off logging.
 
     Returns
     -------
@@ -461,5 +468,6 @@ def find_geotiff_files(path: str | Path, pattern: str = ".*") -> [str]:
     if check_if_s3_uri(path):
         geotiff_file_paths = [f"s3://{file}" for file in geotiff_file_paths]
 
-    _log.info(f"Found {len(geotiff_file_paths)} GeoTIFF files.")
+    if verbose:
+        _log.info(f"Found {len(geotiff_file_paths)} GeoTIFF files.")
     return geotiff_file_paths
