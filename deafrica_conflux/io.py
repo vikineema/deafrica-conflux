@@ -115,12 +115,6 @@ def write_table_to_parquets(
     else:
         fs = fsspec.filesystem("file")
 
-    # Check if the parent folder exists.
-    parent_folder = os.path.join(output_directory, period)
-    if not check_dir_exists(parent_folder):
-        fs.makedirs(parent_folder, exist_ok=True)
-        _log.info(f"Created directory: {parent_folder}")
-
     # Split each row of the table into a seperate dataframe.
     tables = np.split(table, len(table))
     assert len(tables) == len(table)
@@ -163,6 +157,12 @@ def write_table_to_parquets(
         file_name = make_parquet_file_name(
             drill_name=drill_name, task_id_string=task_id_string, uid=uid
         )
+        # Check if the parent folder exists.
+        parent_folder = os.path.join(output_directory, uid)
+        if not check_dir_exists(parent_folder):
+            fs.makedirs(parent_folder, exist_ok=True)
+            _log.info(f"Created directory: {parent_folder}")
+
         output_file_path = os.path.join(parent_folder, file_name)
         pyarrow.parquet.write_table(table=table_pa, where=output_file_path, compression="GZIP")
         _log.info(f"Table written to {output_file_path}")
