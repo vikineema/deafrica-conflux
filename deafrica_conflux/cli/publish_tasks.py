@@ -11,7 +11,7 @@ from odc.stats._cli_common import parse_all_tasks
 from deafrica_conflux.cli.common import MutuallyExclusiveOption
 from deafrica_conflux.cli.logs import logging_setup
 from deafrica_conflux.io import check_file_exists, check_if_s3_uri
-from deafrica_conflux.queues import get_queue_url, send_batch_with_retry
+from deafrica_conflux.queues import get_queue_url, purge_queue, send_batch_with_retry
 from deafrica_conflux.text import task_id_to_string
 
 
@@ -112,14 +112,7 @@ def publish_tasks(
 
         # Check if there are any messages in the queue.
         # If there are any messages purge the queue.
-        response = sqs_client.get_queue_attributes(
-            QueueUrl=tasks_sqs_queue_url, AttributeNames=["All"]
-        )
-        if float(response["Attributes"]["ApproximateNumberOfMessages"]) > 0:
-            _log.info(f"Purging queue {tasks_sqs_queue_url}...")
-            response = sqs_client.purge_queue(QueueUrl=tasks_sqs_queue_url)
-            time.sleep(60)  # Delay for 1 minute
-            _log.info(f"Purge of queue {tasks_sqs_queue_url} is complete.")
+        purge_queue(queue_url=tasks_sqs_queue_url, sqs_client=sqs_client)
 
         _, failed_to_push = send_batch_with_retry(
             queue_url=tasks_sqs_queue_url, messages=tasks_str, max_retries=10, sqs_client=sqs_client
