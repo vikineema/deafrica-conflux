@@ -8,6 +8,7 @@ import json
 import logging
 import os
 import re
+import time
 import urllib
 from pathlib import Path
 
@@ -110,7 +111,8 @@ def write_table_to_parquets(
     # Parse the task id.
     period, x, y = task_id_string.split("/")
 
-    if check_if_s3_uri(output_directory):
+    is_s3 = check_if_s3_uri(output_directory)
+    if is_s3:
         fs = fsspec.filesystem("s3")
     else:
         fs = fsspec.filesystem("file")
@@ -164,7 +166,31 @@ def write_table_to_parquets(
             _log.info(f"Created directory: {parent_folder}")
 
         output_file_path = os.path.join(parent_folder, file_name)
-        pyarrow.parquet.write_table(table=table_pa, where=output_file_path, compression="GZIP")
+
+        if is_s3:
+            # To get around the SlowDown ("Please reduce your request rate.") error
+            # when writing to s3
+            max_retries = 5
+            time_delay = 1
+            for attempt in range(max_retries):
+                try:
+                    pyarrow.parquet.write_table(
+                        table=table_pa, where=output_file_path, compression="GZIP"
+                    )
+                except Exception as error:
+                    _log.info(f"Attempt {attempt+1} to write table to {output_file_path} failed!")
+                    _log.error(error)
+                    if attempt + 1 != max_retries:
+                        _log.info(f"Waiting {time_delay} seconds before next attempt.")
+                        time.sleep(time_delay)
+                        continue
+                    else:
+                        raise error
+                else:
+                    break
+        else:
+            pyarrow.parquet.write_table(table=table_pa, where=output_file_path, compression="GZIP")
+
         _log.info(f"Table written to {output_file_path}")
         output_file_paths.append(output_file_path)
     return output_file_paths
