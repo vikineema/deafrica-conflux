@@ -133,7 +133,7 @@ def write_table_to_parquets(
         else:
             uid = str(table_.index[0])
 
-        table_["date"] = [pd.to_datetimperiod]
+        table_["date"] = pd.to_datetime(period)
 
         # Write the table.
         file_name = make_parquet_file_name(
