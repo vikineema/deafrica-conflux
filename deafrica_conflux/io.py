@@ -133,27 +133,7 @@ def write_table_to_parquets(
         else:
             uid = str(table_.index[0])
 
-        # Convert the table to pyarrow.
-        table_pa = pyarrow.Table.from_pandas(table_)
-
-        # Dump new metadata to JSON.
-        meta_json = json.dumps(
-            {
-                "drill": drill_name,
-                "date": period,
-            }
-        )
-
-        # Dump existing (Pandas) metadata.
-        # https://towardsdatascience.com/
-        #   saving-metadata-with-dataframes-71f51f558d8e
-        existing_meta = table_pa.schema.metadata
-        combined_meta = {
-            PARQUET_META_KEY: meta_json.encode(),
-            **existing_meta,
-        }
-        # Replace the metadata.
-        table_pa = table_pa.replace_schema_metadata(combined_meta)
+        table_["date"] = [pd.to_datetimperiod]
 
         # Write the table.
         file_name = make_parquet_file_name(
@@ -174,9 +154,7 @@ def write_table_to_parquets(
             time_delay = 1
             for attempt in range(max_retries):
                 try:
-                    pyarrow.parquet.write_table(
-                        table=table_pa, where=output_file_path, compression="GZIP"
-                    )
+                    table_.to_parquet(output_file_path)
                 except Exception as error:
                     _log.info(f"Attempt {attempt+1} to write table to {output_file_path} failed!")
                     _log.error(error)
@@ -189,7 +167,7 @@ def write_table_to_parquets(
                 else:
                     break
         else:
-            pyarrow.parquet.write_table(table=table_pa, where=output_file_path, compression="GZIP")
+            table_.to_parquet(output_file_path)
 
         _log.info(f"Table written to {output_file_path}")
         output_file_paths.append(output_file_path)
