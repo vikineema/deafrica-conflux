@@ -107,7 +107,7 @@ def stack_polygon_timeseries_to_csv(
         _log.info(f"Created directory: {output_file_parent_directory}")
 
     with fs.open(output_file_path, "w") as f:
-        df.to_csv(f, index_label="date")
+        polygon_timeseries.to_csv(f, index_label="date")
 
     _log.info(f"CSV file written to {output_file_path}")
 
