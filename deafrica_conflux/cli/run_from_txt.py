@@ -47,7 +47,7 @@ from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
 )
 @click.option("--output-directory", type=str, help="Directory to write the drill outputs to.")
 @click.option(
-    "--polygons-ids-mapping-file",
+    "--polygon-ids-mapping-file",
     type=str,
     help="JSON file mapping numerical polygons ids (WB_ID) to string polygons ids (UID).",
 )
