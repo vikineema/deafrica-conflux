@@ -34,7 +34,7 @@ GEOTIFF_EXTENSIONS = {".tif", ".tiff", ".gtiff"}
 PARQUET_META_KEY = b"conflux.metadata"
 
 
-def tables_exist(drill_name: str, task_id_string: str, output_directory: str) -> bool:
+def table_exist(drill_name: str, task_id_string: str, output_directory: str) -> bool:
     """
     Check whether tables for  a specific task exist.
 
