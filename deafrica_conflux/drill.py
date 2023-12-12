@@ -27,6 +27,7 @@ def drill(
     task_id_string: str,
     cache: DatasetCache,
     polygons_rasters_directory: str,
+    polygon_ids_mapping: dict = {},
     dc: datacube.Datacube | None = None,
 ) -> pd.DataFrame:
     """
@@ -42,6 +43,8 @@ def drill(
         Dataset cache to read datasets from.
     polygons_rasters_directory : str
         Directory to search for polygons raster files.
+    polygon_ids_mapping: dict[str, str]
+        Dictionary mapping numerical polygon ids (WB_ID) to string polygon ids (UID)
     dc : datacube.Datacube | None, optional
         Optional existing Datacube., by default None
 
@@ -138,7 +141,12 @@ def drill(
     summary_df_list = []
     for region_prop in props:
         polygon_summary_df = region_prop.summarise
-        polygon_summary_df.index = [region_prop.label]
+        # Get the string unique id of the polygon
+        # if the polygons ids mapping dictionary is provided.
+        if polygon_ids_mapping:
+            polygon_summary_df.index = [polygon_ids_mapping[str(region_prop.label)]]
+        else:
+            polygon_summary_df.index = [region_prop.label]
         summary_df_list.append(polygon_summary_df)
 
     summary_df = pd.concat(summary_df_list, ignore_index=False)
