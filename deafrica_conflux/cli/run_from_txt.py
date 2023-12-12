@@ -16,8 +16,8 @@ from deafrica_conflux.io import (
     check_dir_exists,
     check_file_exists,
     check_if_s3_uri,
-    tables_exist,
-    write_table_to_parquets,
+    table_exists,
+    write_table_to_parquet,
 )
 from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
 
@@ -156,7 +156,7 @@ def run_from_txt(
 
         if not overwrite:
             _log.info(f"Checking existence of {task}")
-            exists = tables_exist(
+            exists = table_exists(
                 drill_name=drill_name, task_id_string=task, output_directory=output_directory
             )
         if overwrite or not exists:
@@ -167,15 +167,15 @@ def run_from_txt(
                     task_id_string=task,
                     cache=cache,
                     polygons_rasters_directory=polygons_rasters_directory,
+                    polygon_ids_mapping=polygon_ids_mapping,
                     dc=dc,
                 )
 
-                pq_file_names = write_table_to_parquets(  # noqa F841
+                pq_file_name = write_table_to_parquet(  # noqa F841
                     drill_name=drill_name,
                     task_id_string=task,
                     table=table,
                     output_directory=output_directory,
-                    polygon_ids_mapping=polygon_ids_mapping,
                 )
             except KeyError as keyerr:
                 _log.exception(f"Found task {task} has KeyError: {str(keyerr)}")
