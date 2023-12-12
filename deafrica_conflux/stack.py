@@ -11,10 +11,10 @@ import logging
 import os
 from pathlib import Path
 
+import dask.dataframe as dd
 import fsspec
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 from deafrica_conflux.io import check_dir_exists, check_if_s3_uri, find_parquet_files
 
@@ -62,7 +62,7 @@ def stack_polygon_timeseries_to_csv(
 ) -> str:
     """
     Stack the timeseries for a polygon from the drill output parquet files
-    into a csv file.
+    into a csv file. Best used in parallel processing.
 
     Parameters
     ----------
@@ -87,17 +87,11 @@ def stack_polygon_timeseries_to_csv(
     # Find all the drill output files.
     drill_output_files = find_parquet_files(path=drill_output_directory, pattern=".*")
 
-    timeseries_rows = []
-    label = f"Processing timeseries for polygon {polygon_id}: "
-    with tqdm(drill_output_files, desc=label, total=len(drill_output_files)) as drill_output_files:
-        for pq_file in drill_output_files:
-            df = pd.read_parquet(pq_file)
-            try:
-                timeseries_rows.append(df.loc[polygon_id])
-            except KeyError:
-                continue
+    # Read in all the drill output parquet files.
+    df = dd.read_parquet(drill_output_files)
 
-    polygon_timeseries = pd.DataFrame(timeseries_rows)
+    polygon_timeseries = df.loc[polygon_id]
+    polygon_timeseries = polygon_timeseries.compute()
     polygon_timeseries = update_timeseries(polygon_timeseries)
 
     output_file_parent_directory = os.path.join(output_directory, f"{polygon_id[:4]}")
@@ -113,7 +107,7 @@ def stack_polygon_timeseries_to_csv(
         _log.info(f"Created directory: {output_file_parent_directory}")
 
     with fs.open(output_file_path, "w") as f:
-        df.to_csv(f, index_label="date")
+        polygon_timeseries.to_csv(f, index_label="date")
 
     _log.info(f"CSV file written to {output_file_path}")
 
