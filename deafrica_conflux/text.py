@@ -2,7 +2,7 @@
 import os
 
 
-def make_parquet_file_name(drill_name: str, task_id_string: str, uid: str) -> str:
+def make_parquet_file_name(drill_name: str, task_id_string: str) -> str:
     """
     Make filename for Parquet.
 
@@ -14,8 +14,6 @@ def make_parquet_file_name(drill_name: str, task_id_string: str, uid: str) -> st
     task_id_string : str
         Task ID of the task.
 
-    uid : str
-        Unique polygon id.
     Returns
     -------
     str
@@ -24,7 +22,7 @@ def make_parquet_file_name(drill_name: str, task_id_string: str, uid: str) -> st
     # Parse the task id.
     period, x, y = task_id_string.split("/")
 
-    parquet_file_name = f"{drill_name}_x{x}y{y}_{period}_{uid}.pq"
+    parquet_file_name = f"{drill_name}_x{x}y{y}_{period}.pq"
 
     return parquet_file_name
 
