@@ -12,7 +12,7 @@ from deafrica_conflux.queues import (
     move_to_dead_letter_queue,
     receive_messages,
 )
-from deafrica_conflux.stack import stack_waterbodies_parquet_to_csv
+from deafrica_conflux.stack import stack_polygon_timeseries_to_csv
 
 
 @click.command("stack-from-sqs-queue", no_args_is_help=True)
@@ -94,7 +94,7 @@ def stack_from_sqs_queue(verbose, drill_output_directory, output_directory, ids_
             ]
 
             try:
-                stack_waterbodies_parquet_to_csv(
+                polygon_timeseries_fp = stack_polygon_timeseries_to_csv(  # noqa F841
                     polygon_id=polygon_id,
                     drill_output_directory=drill_output_directory,
                     output_directory=output_directory,

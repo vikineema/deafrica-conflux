@@ -150,5 +150,6 @@ def drill(
         summary_df_list.append(polygon_summary_df)
 
     summary_df = pd.concat(summary_df_list, ignore_index=False)
+    summary_df.sort_index(inplace=True)
 
     return summary_df

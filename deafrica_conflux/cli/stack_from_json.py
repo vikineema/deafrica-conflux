@@ -6,7 +6,7 @@ import fsspec
 
 from deafrica_conflux.cli.logs import logging_setup
 from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3_uri
-from deafrica_conflux.stack import stack_waterbodies_parquet_to_csv
+from deafrica_conflux.stack import stack_polygon_timeseries_to_csv
 
 
 @click.command("stack-from-json", no_args_is_help=True)
@@ -71,7 +71,7 @@ def stack_from_json(verbose, drill_output_directory, output_directory, polygon_i
     polygon_ids = list(polygon_ids_mapping.values())
 
     for polygon_id in polygon_ids:
-        stack_waterbodies_parquet_to_csv(
+        polygon_timeseries_fp = stack_polygon_timeseries_to_csv(  # noqa F841
             polygon_id=polygon_id,
             drill_output_directory=drill_output_directory,
             output_directory=output_directory,
