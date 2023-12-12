@@ -14,13 +14,9 @@ from pathlib import Path
 import fsspec
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
-from deafrica_conflux.io import (
-    check_dir_exists,
-    check_if_s3_uri,
-    find_parquet_files,
-    load_parquet_file,
-)
+from deafrica_conflux.io import check_dir_exists, check_if_s3_uri, find_parquet_files
 
 _log = logging.getLogger(__name__)
 
@@ -61,44 +57,64 @@ def update_timeseries(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def stack_waterbodies_parquet_to_csv(
+def stack_polygon_timeseries_to_csv(
     polygon_id: str, drill_output_directory: str | Path, output_directory: str | Path
-):
+) -> str:
+    """
+    Stack the timeseries for a polygon from the drill output parquet files
+    into a csv file.
+
+    Parameters
+    ----------
+    polygon_id : str
+        Unique id for the polygon.
+    drill_output_directory : str | Path
+        Directory containing the parquet files i.e. outputs from the drill step.
+    output_directory : str | Path
+        Directory to write the csv files to.
+
+    Returns
+    -------
+    str
+        File path of the polygon's timeseries csv file.
+    """
     # Support pathlib paths.
-    drill_outputs_directory = str(drill_output_directory)
+    drill_output_directory = str(drill_output_directory)
     output_directory = str(output_directory)
 
     _log.info(f"Stacking timeseries for polygon {polygon_id}")
-    # Find drill output files for the polygon.
-    pq_files = find_parquet_files(
-        path=drill_outputs_directory, pattern=f".*{polygon_id}.*", verbose=False
-    )
 
-    if not pq_files:
-        _log.info(f"Found 0 drill output parquet files for polygon {polygon_id}")
+    # Find all the drill output files.
+    drill_output_files = find_parquet_files(path=drill_output_directory, pattern=".*")
+
+    timeseries_rows = []
+    label = f"Processing timeseries for polygon {polygon_id}: "
+    with tqdm(drill_output_files, desc=label, total=len(drill_output_files)) as drill_output_files:
+        for pq_file in drill_output_files:
+            df = pd.read_parquet(pq_file)
+            try:
+                timeseries_rows.append(df.loc[polygon_id])
+            except KeyError:
+                continue
+
+    polygon_timeseries = pd.DataFrame(timeseries_rows)
+    polygon_timeseries = update_timeseries(polygon_timeseries)
+
+    output_file_parent_directory = os.path.join(output_directory, f"{polygon_id[:4]}")
+    output_file_path = os.path.join(output_file_parent_directory, f"{polygon_id}.csv")
+
+    if check_if_s3_uri(output_file_parent_directory):
+        fs = fsspec.filesystem("s3")
     else:
-        _log.info(f"Found {len(pq_files)} drill output parquet files for polygon {polygon_id}")
-        df_list = []
-        for file in pq_files:
-            file_df = load_parquet_file(file)
-            df_list.append(file_df)
-        df = pd.concat(df_list, ignore_index=False)
-        df = df.set_index(df["date"])
-        df = update_timeseries(df)
+        fs = fsspec.filesystem("file")
 
-        output_file_parent_directory = os.path.join(output_directory, f"{polygon_id[:4]}")
-        output_file_path = os.path.join(output_file_parent_directory, f"{polygon_id}.csv")
+    if not check_dir_exists(output_file_parent_directory):
+        fs.mkdirs(output_file_parent_directory, exist_ok=True)
+        _log.info(f"Created directory: {output_file_parent_directory}")
 
-        if check_if_s3_uri(output_file_parent_directory):
-            fs = fsspec.filesystem("s3")
-        else:
-            fs = fsspec.filesystem("file")
+    with fs.open(output_file_path, "w") as f:
+        df.to_csv(f, index_label="date")
 
-        if not check_dir_exists(output_file_parent_directory):
-            fs.mkdirs(output_file_parent_directory, exist_ok=True)
-            _log.info(f"Created directory: {output_file_parent_directory}")
+    _log.info(f"CSV file written to {output_file_path}")
 
-        with fs.open(output_file_path, "w") as f:
-            df.to_csv(f, index_label="date")
-
-        _log.info(f"CSV file written to {output_file_path}")
+    return output_file_path
