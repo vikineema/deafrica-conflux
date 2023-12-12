@@ -94,7 +94,7 @@ def stack_from_sqs_queue(verbose, drill_output_directory, output_directory, ids_
             ]
 
             try:
-                stack_polygon_timeseries_to_csv(
+                polygon_timeseries_fp = stack_polygon_timeseries_to_csv(  # noqa F841
                     polygon_id=polygon_id,
                     drill_output_directory=drill_output_directory,
                     output_directory=output_directory,
