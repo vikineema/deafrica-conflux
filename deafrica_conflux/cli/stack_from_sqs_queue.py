@@ -70,61 +70,64 @@ def stack_from_sqs_queue(verbose, drill_output_directory, output_directory, ids_
     max_retries = 10
     retries = 0
     while retries <= max_retries:
-        # Retrieve a single message from the dataset_ids_queue.
-        retrieved_message = receive_messages(
+        # Retrieve messages from the queue.
+        retrieved_messages = receive_messages(
             queue_url=ids_sqs_queue_url,
             max_retries=max_retries,
             visibility_timeout=900,
-            max_no_messages=1,
+            max_no_messages=10,
             sqs_client=sqs_client,
         )
-        if retrieved_message is None:
+        if retrieved_messages is None:
             retries += 1
         else:
             retries = 0  # reset the count
 
-            message = retrieved_message[0]
+            # Get the polygon ids.
+            polygon_ids = [message["Body"] for message in retrieved_messages]
+            _log.info(f"Read polygon ids {', '.join(polygon_ids)} from queue {ids_sqs_queue_url}")
 
-            # Process the task.
-            polygon_id = message["Body"]
-            _log.info(f"Read polygon id {polygon_id} from queue {ids_sqs_queue_url}")
-
-            entry_to_delete = [
+            entries_to_delete = [
                 {"Id": message["MessageId"], "ReceiptHandle": message["ReceiptHandle"]}
+                for message in retrieved_messages
             ]
 
             try:
-                polygon_timeseries_fp = stack_polygon_timeseries_to_csv(  # noqa F841
-                    polygon_id=polygon_id,
+                stack_polygon_timeseries_to_csv(  # noqa F841
+                    polygon_ids=polygon_ids,
                     drill_output_directory=drill_output_directory,
                     output_directory=output_directory,
                 )
-                _log.info(f"Successfully stacked timeseries for polygon {polygon_id}")
+                _log.info(f"Successfully stacked timeseries for polygons: {', '.join(polygon_ids)}")
 
             except Exception as error:
-                _log.error(f"Encountered error while stacking timeseries for polygon {polygon_id}")
+                _log.error(
+                    f"Encountered error while stacking timeseries for polygons: {', '.join(polygon_ids)}"
+                )
                 _log.error(error)
                 move_to_dead_letter_queue(
                     dead_letter_queue_url=dead_letter_queue_url,
-                    message_body=polygon_id,
+                    message_body=polygon_ids,
                     sqs_client=sqs_client,
                 )
                 _log.info(
-                    f"Moved polygon id {polygon_id} to dead letter queue {dead_letter_queue_url}"
+                    f"Moved polygon ids {', '.join(polygon_ids)} to dead letter queue {dead_letter_queue_url}"
                 )
 
-            _log.info(f"Deleting polygon id {polygon_id} from {ids_sqs_queue_url}...")
+            _log.info(f"Deleting polygon ids {', '.join(polygon_ids)} from {ids_sqs_queue_url}...")
             (
                 successfully_deleted,
                 failed_to_delete,
             ) = delete_batch_with_retry(
                 queue_url=ids_sqs_queue_url,
-                entries=entry_to_delete,
+                entries=entries_to_delete,
                 max_retries=max_retries,
                 sqs_client=sqs_client,
             )
             if failed_to_delete:
-                _log.error(f"Failed to delete {polygon_id} from queue {ids_sqs_queue_url}")
+                _log.error(
+                    f"Failed to delete {', '.join(polygon_ids)} from queue {ids_sqs_queue_url}"
+                )
                 # raise RuntimeError(f"Failed to delete task: {task}")
             else:
-                _log.info(f"Deleted polygon id {polygon_id} from {ids_sqs_queue_url}")
+                _log.info(f"Deleted polygon ids {', '.join(polygon_ids)} from {ids_sqs_queue_url}")
