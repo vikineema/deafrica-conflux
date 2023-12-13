@@ -361,7 +361,7 @@ def send_batch_with_retry(
 
 def move_to_dead_letter_queue(
     dead_letter_queue_url: str,
-    message_body: str,
+    message_body: list[str] | str,
     max_retries: int = 10,
     sqs_client: SQSClient = None,
 ):
@@ -372,7 +372,7 @@ def move_to_dead_letter_queue(
     ----------
     dead_letter_queue_url : str
         URL of the dead-letter SQS queue to receive the message.
-    message_body : str
+    message_body : list[str] | str,
         The body text of the message.
     max_retries : int, optional
         Maximum number of times to try to resend a message to the dead-letter SQS queue.
@@ -383,11 +383,15 @@ def move_to_dead_letter_queue(
     if sqs_client is None:
         sqs_client = boto3.client("sqs")
 
-    message = [str(message_body)]
+    if isinstance(message_body, list):
+        messages = [str(i) for i in message_body]
+    else:
+        messages = [str(message_body)]
+
     # Send message to SQS queue
     send_batch_with_retry(
         queue_url=dead_letter_queue_url,
-        messages=message,
+        messages=messages,
         max_retries=max_retries,
         sqs_client=sqs_client,
     )
