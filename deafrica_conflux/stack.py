@@ -11,6 +11,7 @@ import logging
 import os
 from pathlib import Path
 
+import dask
 import dask.dataframe as dd
 import fsspec
 import numpy as np
@@ -82,26 +83,29 @@ def stack_polygon_timeseries_to_csv(
     drill_output_directory = str(drill_output_directory)
     output_directory = str(output_directory)
 
-    _log.info(f"Stacking timeseries for polygon(s) {', '.join(polygon_ids)}")
-
-    # Find all the drill output files.
-    drill_output_files = find_parquet_files(path=drill_output_directory, pattern=".*")
-
-    # Read in all the drill output parquet files.
-    df = dd.read_parquet(drill_output_files)
-
     # Get the file system to use to write.
-    if check_dir_exists(output_directory):
+    if check_if_s3_uri(output_directory):
         fs = fsspec.filesystem("s3")
     else:
         fs = fsspec.filesystem("file")
 
-    # Get the timeseries for each polygon.
+    _log.info(f"Stacking timeseries for polygons {', '.join(polygon_ids)}")
+
+    # Find all the drill output files.
+    drill_output_files = find_parquet_files(path=drill_output_directory, pattern=".*")
+
+    # Read in all the drill output parquet files using dask dataframes.
+    df = dd.read_parquet(drill_output_files)
+
+    # Compute the timeseries for each polygon id.
+    to_compute = [df.loc[poly_id] for poly_id in polygon_ids]
+    polygons_timeseries = dask.compute(*to_compute)
+
+    # Write the timeseries to csv.
     output_file_paths = []
-    for polygon_id in polygon_ids:
-        polygon_timeseries = df.loc[polygon_id]
-        polygon_timeseries = polygon_timeseries.compute()
-        polygon_timeseries = update_timeseries(polygon_timeseries)
+    for frame in polygons_timeseries:
+        polygon_id = frame.index[0]
+        polygon_timeseries = update_timeseries(frame)
 
         output_file_parent_directory = os.path.join(output_directory, f"{polygon_id[:4]}")
         output_file_path = os.path.join(output_file_parent_directory, f"{polygon_id}.csv")
