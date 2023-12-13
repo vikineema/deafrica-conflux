@@ -75,7 +75,7 @@ def stack_from_sqs_queue(verbose, drill_output_directory, output_directory, ids_
             queue_url=ids_sqs_queue_url,
             max_retries=max_retries,
             visibility_timeout=900,
-            max_no_messages=10,
+            max_no_messages=5,
             sqs_client=sqs_client,
         )
         if retrieved_messages is None:
