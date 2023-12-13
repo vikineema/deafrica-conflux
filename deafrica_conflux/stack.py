@@ -89,7 +89,7 @@ def stack_polygon_timeseries_to_csv(
     else:
         fs = fsspec.filesystem("file")
 
-    _log.info(f"Stacking timeseries for polygons {', '.join(polygon_ids)}")
+    _log.info(f"Stacking timeseries for polygons: {', '.join(polygon_ids)}")
 
     # Find all the drill output files.
     drill_output_files = find_parquet_files(path=drill_output_directory, pattern=".*")

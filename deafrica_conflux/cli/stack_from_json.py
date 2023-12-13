@@ -6,6 +6,7 @@ import fsspec
 
 from deafrica_conflux.cli.logs import logging_setup
 from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3_uri
+from deafrica_conflux.queues import batch_messages
 from deafrica_conflux.stack import stack_polygon_timeseries_to_csv
 
 
@@ -58,7 +59,7 @@ def stack_from_json(verbose, drill_output_directory, output_directory, polygon_i
         _log.error(f"File {polygon_ids_mapping_file} does not exist!")
         raise FileNotFoundError(f"File {polygon_ids_mapping_file} does not exist!)")
 
-    # Read the polygons ids mapping file.
+    # Get the polygon ids.
     if check_if_s3_uri(polygon_ids_mapping_file):
         fs = fsspec.filesystem("s3")
     else:
@@ -67,12 +68,14 @@ def stack_from_json(verbose, drill_output_directory, output_directory, polygon_i
     with fs.open(polygon_ids_mapping_file) as f:
         polygon_ids_mapping = json.load(f)
 
-    # Find all the drill output parquet files
     polygon_ids = list(polygon_ids_mapping.values())
 
-    for polygon_id in polygon_ids:
-        polygon_timeseries_fp = stack_polygon_timeseries_to_csv(  # noqa F841
-            polygon_id=polygon_id,
+    # Batch the polygon ids into batches of 10.
+    batched_polygon_ids = batch_messages(messages=polygon_ids, n=100)
+
+    for batch in batched_polygon_ids:
+        stack_polygon_timeseries_to_csv(
+            polygon_ids=batch,
             drill_output_directory=drill_output_directory,
             output_directory=output_directory,
         )
