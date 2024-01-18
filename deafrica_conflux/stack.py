@@ -16,6 +16,7 @@ import dask.dataframe as dd
 import fsspec
 import numpy as np
 import pandas as pd
+import pyarrow.fs
 
 from deafrica_conflux.io import check_dir_exists, check_if_s3_uri, find_parquet_files
 
@@ -59,7 +60,10 @@ def update_timeseries(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def stack_polygon_timeseries_to_csv(
-    polygon_ids: list[str], drill_output_directory: str | Path, output_directory: str | Path
+    polygon_uids: list[str] | str,
+    polygons_stringids_to_tileids: dict[str, list[str]],
+    drill_output_directory: str | Path,
+    output_directory: str | Path,
 ) -> list[str]:
     """
     Stack the timeseries for a polygon from the drill output parquet files
@@ -67,8 +71,11 @@ def stack_polygon_timeseries_to_csv(
 
     Parameters
     ----------
-    polygon_ids : list[str]
+    polygon_uids : list[str] | str
         Unique ids for the polygons.
+    polygons_stringids_to_tileids: dict[str, list[str]]
+        Dictionary mapping the unique polygon ids to the tile ids for the
+        tiles they intersect with.
     drill_output_directory : str | Path
         Directory containing the parquet files i.e. outputs from the drill step.
     output_directory : str | Path
@@ -89,26 +96,34 @@ def stack_polygon_timeseries_to_csv(
     else:
         fs = fsspec.filesystem("file")
 
-    _log.info(f"Stacking timeseries for polygons: {', '.join(polygon_ids)}")
+    _log.info(f"Stacking timeseries for polygons: {', '.join(polygon_uids)}")
+
+    if isinstance(polygon_uids, str):
+        polygon_uids = [polygon_uids]
 
     # Find all the drill output files.
     drill_output_files = find_parquet_files(path=drill_output_directory, pattern=".*")
 
-    # Read in all the drill output parquet files using dask dataframes.
-    df = dd.read_parquet(drill_output_files)
-
-    # Compute the timeseries for each polygon id.
-    to_compute = [df.loc[poly_id] for poly_id in polygon_ids]
-    polygons_timeseries = dask.compute(*to_compute)
-
-    # Write the timeseries to csv.
     output_file_paths = []
-    for frame in polygons_timeseries:
-        polygon_id = frame.index[0]
-        polygon_timeseries = update_timeseries(frame)
-
-        output_file_parent_directory = os.path.join(output_directory, f"{polygon_id[:4]}")
-        output_file_path = os.path.join(output_file_parent_directory, f"{polygon_id}.csv")
+    for poly_uid in polygon_uids:
+        # Filter the drill output files.
+        filtered_drill_output_files = [
+            drill_output_file
+            for drill_output_file in drill_output_files
+            if any(
+                tileid in drill_output_file for tileid in polygons_stringids_to_tileids[poly_uid]
+            )
+        ]
+        # Read the parquet files.
+        df = pd.read_parquet(
+            [f.lstrip("s3://") for f in filtered_drill_output_files],
+            filesystem=pyarrow.fs.FileSystem.from_uri(filtered_drill_output_files[0])[0],
+        )
+        # Get the timeseries for the specific polygon from the larger table.
+        polygon_timeseries = update_timeseries(df.loc[poly_uid])
+        # Write the polygon timeseries to a csv file.
+        output_file_parent_directory = os.path.join(output_directory, f"{poly_uid[:4]}")
+        output_file_path = os.path.join(output_file_parent_directory, f"{poly_uid}.csv")
 
         if not check_dir_exists(output_file_parent_directory):
             fs.mkdirs(output_file_parent_directory, exist_ok=True)
@@ -120,4 +135,5 @@ def stack_polygon_timeseries_to_csv(
         _log.info(f"CSV file written to {output_file_path}")
 
         output_file_paths.append(output_file_path)
+
     return output_file_paths
