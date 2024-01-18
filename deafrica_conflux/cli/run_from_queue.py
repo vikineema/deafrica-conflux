@@ -55,7 +55,7 @@ from deafrica_conflux.queues import (
 @click.option(
     "--polygon-numericids-to-stringids-file",
     type=str,
-    help="JSON file mapping numerical polygon ids (WB_ID) to string polygon ids (UID).",
+    help="JSON file mapping numeric polygon ids (WB_ID) to string polygon ids (UID).",
 )
 @click.option(
     "--overwrite/--no-overwrite",

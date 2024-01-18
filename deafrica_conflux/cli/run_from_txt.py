@@ -49,7 +49,7 @@ from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
 @click.option(
     "--polygon-numericids-to-stringids-file",
     type=str,
-    help="JSON file mapping numerical polygons ids (WB_ID) to string polygons ids (UID).",
+    help="JSON file mapping numeric polygons ids (WB_ID) to string polygons ids (UID).",
 )
 @click.option(
     "--overwrite/--no-overwrite",

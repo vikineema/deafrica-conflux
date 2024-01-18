@@ -24,11 +24,22 @@ from deafrica_conflux.stack import stack_polygon_timeseries_to_csv
     help="Output directory for waterbodies-style stack",
 )
 @click.option(
-    "--polygon-ids-mapping-file",
+    "--polygon-numericids-to-stringids-file",
     type=str,
-    help="JSON file mapping numerical polygon ids (WB_ID) to string polygon ids (UID).",
+    help="JSON file mapping numeric polygons ids (WB_ID) to string polygons ids (UID).",
 )
-def stack_from_json(verbose, drill_output_directory, output_directory, polygon_ids_mapping_file):
+@click.option(
+    "--polygon-stringids-to-tileids-file",
+    type=str,
+    help="JSON file mapping numeric polygons ids (WB_ID) to string polygons ids (UID).",
+)
+def stack_from_json(
+    verbose,
+    drill_output_directory,
+    output_directory,
+    polygon_ids_mapping_file,
+    polygon_stringids_to_tileids_file,
+):
     """
     \b
     Stack outputs of deafrica-conflux into csv formats
@@ -41,7 +52,8 @@ def stack_from_json(verbose, drill_output_directory, output_directory, polygon_i
     # Support pathlib Paths
     output_directory = str(output_directory)
     drill_output_directory = str(drill_output_directory)
-    polygon_ids_mapping_file = str(polygon_ids_mapping_file)
+    polygon_numericids_to_stringids_file = str(polygon_numericids_to_stringids_file)
+    polygon_stringids_to_tileids_file = str(polygon_stringids_to_tileids_file)
 
     if not check_dir_exists(drill_output_directory):
         _log.error(f"Directory {drill_output_directory} does not exist!")
@@ -55,27 +67,35 @@ def stack_from_json(verbose, drill_output_directory, output_directory, polygon_i
             fsspec.filesystem("file").makedirs(output_directory, exist_ok=True)
         _log.info(f"Created directory {output_directory}")
 
-    if not check_file_exists(polygon_ids_mapping_file):
-        _log.error(f"File {polygon_ids_mapping_file} does not exist!")
-        raise FileNotFoundError(f"File {polygon_ids_mapping_file} does not exist!)")
+    if not check_file_exists(polygon_numericids_to_stringids_file):
+        _log.error(f"File {polygon_numericids_to_stringids_file} does not exist!")
+        raise FileNotFoundError(f"File {polygon_numericids_to_stringids_file} does not exist!)")
 
-    # Get the polygon ids.
-    if check_if_s3_uri(polygon_ids_mapping_file):
+    if not check_file_exists(polygon_stringids_to_tileids_file):
+        _log.error(f"File {polygon_stringids_to_tileids_file} does not exist!")
+        raise FileNotFoundError(f"File {polygon_stringids_to_tileids_file} does not exist!)")
+
+    if check_if_s3_uri(polygon_numericids_to_stringids_file):
         fs = fsspec.filesystem("s3")
     else:
         fs = fsspec.filesystem("file")
 
-    with fs.open(polygon_ids_mapping_file) as f:
-        polygon_ids_mapping = json.load(f)
+    with fs.open(polygon_numericids_to_stringids_file) as f:
+        polygon_numericids_to_stringids = json.load(f)
 
-    polygon_ids = list(polygon_ids_mapping.values())
+    polygon_uids = list(polygon_numericids_to_stringids.values())
 
-    # Batch the polygon ids into batches of 10.
-    batched_polygon_ids = batch_messages(messages=polygon_ids, n=100)
+    if check_if_s3_uri(polygon_stringids_to_tileids_file):
+        fs = fsspec.filesystem("s3")
+    else:
+        fs = fsspec.filesystem("file")
 
-    for batch in batched_polygon_ids:
-        stack_polygon_timeseries_to_csv(
-            polygon_ids=batch,
-            drill_output_directory=drill_output_directory,
-            output_directory=output_directory,
-        )
+    with fs.open(polygon_stringids_to_tileids_file) as f:
+        polygon_stringids_to_tileids = json.load(f)
+
+    stack_polygon_timeseries_to_csv(
+        polygon_uids=polygon_uids,
+        polygon_stringids_to_tileids=polygon_stringids_to_tileids,
+        drill_output_directory=drill_output_directory,
+        output_directory=output_directory,
+    )

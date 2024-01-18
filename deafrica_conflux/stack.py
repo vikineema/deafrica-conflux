@@ -61,7 +61,7 @@ def update_timeseries(df: pd.DataFrame) -> pd.DataFrame:
 
 def stack_polygon_timeseries_to_csv(
     polygon_uids: list[str] | str,
-    polygons_stringids_to_tileids: dict[str, list[str]],
+    polygon_stringids_to_tileids_file: dict[str, list[str]],
     drill_output_directory: str | Path,
     output_directory: str | Path,
 ) -> list[str]:
@@ -73,7 +73,7 @@ def stack_polygon_timeseries_to_csv(
     ----------
     polygon_uids : list[str] | str
         Unique ids for the polygons.
-    polygons_stringids_to_tileids: dict[str, list[str]]
+    polygon_stringids_to_tileids_file: dict[str, list[str]]
         Dictionary mapping the unique polygon ids to the tile ids for the
         tiles they intersect with.
     drill_output_directory : str | Path
@@ -111,7 +111,8 @@ def stack_polygon_timeseries_to_csv(
             drill_output_file
             for drill_output_file in drill_output_files
             if any(
-                tileid in drill_output_file for tileid in polygons_stringids_to_tileids[poly_uid]
+                tileid in drill_output_file
+                for tileid in polygon_stringids_to_tileids_file[poly_uid]
             )
         ]
         # Read the parquet files.
