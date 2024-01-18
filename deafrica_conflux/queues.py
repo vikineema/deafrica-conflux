@@ -361,7 +361,7 @@ def send_batch_with_retry(
 
 def move_to_dead_letter_queue(
     dead_letter_queue_url: str,
-    message_body: str,
+    message_body: list[str] | str,
     max_retries: int = 10,
     sqs_client: SQSClient = None,
 ):
@@ -372,7 +372,7 @@ def move_to_dead_letter_queue(
     ----------
     dead_letter_queue_url : str
         URL of the dead-letter SQS queue to receive the message.
-    message_body : str
+    message_body : list[str] | str,
         The body text of the message.
     max_retries : int, optional
         Maximum number of times to try to resend a message to the dead-letter SQS queue.
@@ -383,11 +383,15 @@ def move_to_dead_letter_queue(
     if sqs_client is None:
         sqs_client = boto3.client("sqs")
 
-    message = [str(message_body)]
+    if isinstance(message_body, list):
+        messages = [str(i) for i in message_body]
+    else:
+        messages = [str(message_body)]
+
     # Send message to SQS queue
     send_batch_with_retry(
         queue_url=dead_letter_queue_url,
-        messages=message,
+        messages=messages,
         max_retries=max_retries,
         sqs_client=sqs_client,
     )
@@ -651,3 +655,39 @@ def receive_messages(
     else:
         _log.error(f"Received no message from queue {queue_url}")
         return None
+
+
+def purge_queue(queue_url: str, sqs_client: SQSClient | None = None):
+    """
+    Purge an SQS queue if it contains any messages.
+
+    Parameters
+    ----------
+    queue_url : str
+        URL of the SQS queue to send the messages to.
+    sqs_client : SQSClient | None, optional
+        A low-level client representing Amazon Simple Queue Service (SQS), by default None
+
+    """
+    # Get the service client.
+    if sqs_client is None:
+        sqs_client = boto3.client("sqs")
+
+    _log.info(f"Checking if queue {queue_url} contains any messages...")
+    response = sqs_client.get_queue_attributes(QueueUrl=queue_url, AttributeNames=["All"])
+    no_messages = float(response["Attributes"]["ApproximateNumberOfMessages"])
+    if no_messages > 0:
+        _log.info(f"Queue {queue_url} contains {no_messages} messages.")
+        _log.info(f"Purging queue {queue_url}...")
+        try:
+            response = sqs_client.purge_queue(QueueUrl=queue_url)
+        except Exception as error:
+            _log.error(f"Could not purge queue {queue_url}")
+            _log.error(error)
+            _log.info(f"Skipping purge of queue {queue_url}")
+        else:
+            time.sleep(60)  # Delay for 1 minute
+            _log.info(f"Purge of queue {queue_url} is complete.")
+    else:
+        _log.info(f"Queue {queue_url} contains no messages..")
+        _log.info(f"Skipping purge of queue {queue_url}")

@@ -42,6 +42,7 @@ dependencies= [
     "pyarrow",
     "python-geohash",
     "rasterio",
+    "rioxarray",
     "s3fs",
     "s3urls",
     "shapely",

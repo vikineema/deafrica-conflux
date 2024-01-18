@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from importlib import import_module
@@ -5,33 +6,33 @@ from importlib import import_module
 import click
 import datacube
 import fsspec
-import geopandas as gpd
+from odc import dscache
+from odc.aws import s3_download
 from rasterio.errors import RasterioIOError
 
 from deafrica_conflux.cli.logs import logging_setup
-from deafrica_conflux.db import get_engine_waterbodies
 from deafrica_conflux.drill import drill
-from deafrica_conflux.id_field import guess_id_field
 from deafrica_conflux.io import (
+    check_dir_exists,
     check_file_exists,
     check_if_s3_uri,
     table_exists,
     write_table_to_parquet,
 )
 from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
-from deafrica_conflux.stack import stack_waterbodies_parquet_to_db
 
 
 @click.command(
     "run-from-txt",
     no_args_is_help=True,
-    help="Run deafrica-conflux on dataset ids from a text file.",
+    help="Run deafrica-conflux on tasks from a text file.",
 )
-@click.option("-v", "--verbose", count=True)
+@click.option("-v", "--verbose", default=1, count=True)
+@click.option("--cachedb-file-path", type=str, help="File path to the cache file database.")
 @click.option(
-    "--dataset-ids-file",
-    type=click.Path(),
-    help="Text file to read dataset IDs from to run deafrica-conflux on.",
+    "--tasks-text-file",
+    type=str,
+    help="Text file to get tasks ids from.",
 )
 @click.option(
     "--plugin-name",
@@ -40,70 +41,42 @@ from deafrica_conflux.stack import stack_waterbodies_parquet_to_db
         deafrica_conflux/plugins/ directory.",
 )
 @click.option(
-    "--polygons-directory",
+    "--polygons-rasters-directory",
     type=str,
-    # Don't mandate existence since this might be s3://.
-    help="Directory containing the parquet files for the polygons to perform the drill on \
-    split by product regions.",
+    help="Path to the directory containing the polygons raster files.",
 )
+@click.option("--output-directory", type=str, help="Directory to write the drill outputs to.")
 @click.option(
-    "--use-id",
+    "--polygon-ids-mapping-file",
     type=str,
-    default="",
-    help="Optional. Unique key id in polygons vector file.",
-)
-@click.option(
-    "--output-directory",
-    type=str,
-    default=None,
-    # Don't mandate existence since this might be s3://.
-    help="REQUIRED. File URI or S3 URI to the output directory.",
-)
-@click.option(
-    "--partial/--no-partial",
-    default=True,
-    help="Include polygons that only partially intersect the scene.",
-)
-@click.option(
-    "--overedge/--no-overedge",
-    default=True,
-    help="Include data from over the scene boundary.",
+    help="JSON file mapping numerical polygons ids (WB_ID) to string polygons ids (UID).",
 )
 @click.option(
     "--overwrite/--no-overwrite",
     default=False,
-    help="Rerun scenes that have already been processed.",
-)
-@click.option("--db/--no-db", default=False, help="Write to the Waterbodies database.")
-@click.option(
-    "--dump-empty-dataframe/--not-dump-empty-dataframe",
-    default=False,
-    help="Not matter DataFrame is empty or not, always as it as Parquet file.",
+    help="Rerun tasks that have already been processed.",
 )
 def run_from_txt(
     verbose,
-    dataset_ids_file,
+    cachedb_file_path,
+    tasks_text_file,
     plugin_name,
-    polygons_directory,
-    use_id,
+    polygons_rasters_directory,
     output_directory,
-    partial,
-    overedge,
+    polygon_ids_mapping_file,
     overwrite,
-    db,
-    dump_empty_dataframe,
 ):
-    """
-    Run deafrica-conflux on dataset ids from a text file.
-    """
-    # "Support" pathlib Paths.
-    dataset_ids_file = str(dataset_ids_file)
-    polygons_directory = str(polygons_directory)
-    output_directory = str(output_directory)
-
     # Set up logger.
     logging_setup(verbose)
     _log = logging.getLogger(__name__)
+
+    # Support pathlib Paths
+    cachedb_file_path = str(cachedb_file_path)
+    tasks_text_file = str(tasks_text_file)
+    polygons_rasters_directory = str(polygons_rasters_directory)
+    output_directory = str(output_directory)
+    if polygon_ids_mapping_file:
+        polygon_ids_mapping_file = str(polygon_ids_mapping_file)
 
     # Read the plugin as a Python module.
     module = import_module(f"deafrica_conflux.plugins.{plugin_name}")
@@ -112,124 +85,125 @@ def run_from_txt(
     _log.info(f"Using plugin {plugin_file}")
     validate_plugin(plugin)
 
-    # Check if the text file containing the dataset ids exists.
-    if not check_file_exists(dataset_ids_file):
-        _log.error(f"Could not find text file {dataset_ids_file}!")
-        raise FileNotFoundError(f"Could not find text file {dataset_ids_file}!")
+    # Get the drill name from the plugin
+    drill_name = plugin.product_name
+
+    if polygon_ids_mapping_file:
+        if not check_file_exists(polygon_ids_mapping_file):
+            _log.error(f"File {polygon_ids_mapping_file} does not exist!")
+            raise FileNotFoundError(f"File {polygon_ids_mapping_file} does not exist!)")
+
+    if not check_dir_exists(polygons_rasters_directory):
+        _log.error(f"Directory {polygons_rasters_directory} does not exist!")
+        raise FileNotFoundError(f"Directory {polygons_rasters_directory} does not exist!)")
+
+    # Create the output directory if it does not exist.
+    if not check_dir_exists(output_directory):
+        if check_if_s3_uri(output_directory):
+            fsspec.filesystem("s3").makedirs(output_directory, exist_ok=True)
+        else:
+            fsspec.filesystem("file").makedirs(output_directory, exist_ok=True)
+        _log.info(f"Created directory {output_directory}")
+
+    if not check_file_exists(cachedb_file_path):
+        _log.error(f"Could not find the database file {cachedb_file_path}!")
+        raise FileNotFoundError(f"{cachedb_file_path} does not exist!")
     else:
-        # Read ID/s from the S3 URI or File URI.
-        if check_if_s3_uri(dataset_ids_file):
+        if check_if_s3_uri(cachedb_file_path):
+            cachedb_file_path = s3_download(cachedb_file_path)
+            if not check_file_exists(cachedb_file_path):
+                _log.error(f"{cachedb_file_path} did not download!")
+                raise FileNotFoundError(
+                    f"{cachedb_file_path} does not exist! File did not download."
+                )
+
+    if not check_file_exists(tasks_text_file):
+        _log.error(f"Could not find the text file {tasks_text_file}!")
+        raise FileNotFoundError(f"Could not find text file {tasks_text_file}!")
+
+    # Read task ids from the S3 URI or File URI.
+    if check_if_s3_uri(tasks_text_file):
+        fs = fsspec.filesystem("s3")
+    else:
+        fs = fsspec.filesystem("file")
+
+    with fs.open(tasks_text_file, "r") as file:
+        tasks = [line.strip() for line in file]
+    _log.info(f"Read {len(tasks)} tasks from file.")
+    _log.debug(f"Read {tasks} from file.")
+
+    # Read the polygons ids mapping file.
+    if polygon_ids_mapping_file:
+        if check_if_s3_uri(polygon_ids_mapping_file):
             fs = fsspec.filesystem("s3")
         else:
             fs = fsspec.filesystem("file")
 
-        with fs.open(dataset_ids_file, "r") as file:
-            dataset_ids = [line.strip() for line in file]
-        _log.info(f"Read {dataset_ids} from file.")
+        with fs.open(polygon_ids_mapping_file) as f:
+            polygon_ids_mapping = json.load(f)
+    else:
+        polygon_ids_mapping = {}
 
-    if db:
-        engine = get_engine_waterbodies()
-
-    # Connect to the datacube.
+    # Connect to the datacube
     dc = datacube.Datacube(app="deafrica-conflux-drill")
 
-    # Get the product name from the plugin.
-    product_name = plugin.product_name
+    # Read the cache file
+    cache = dscache.open_ro(cachedb_file_path)
 
-    # Process each ID.
-    # Loop through the scenes to produce parquet files.
-    failed_dataset_ids = []
-    for i, dataset_id in enumerate(dataset_ids):
-        _log.info(f"Processing {dataset_id} ({i + 1}/{len(dataset_ids)})")
+    failed_tasks = []
+    for i, task in enumerate(tasks):
+        _log.info(f"Processing task {task} ({i + 1}/{len(tasks)})")
 
-        # Load the dataset using the dataset id.
-        reference_dataset = dc.index.datasets.get(dataset_id)
-
-        # Get the region code for the dataset.
-        region_code = reference_dataset.metadata.region_code
-
-        # Get the center time for the dataset
-        centre_time = reference_dataset.center_time
-
-        # Use the center time to check if a parquet file for the dataset already
-        # exists in the output directory.
         if not overwrite:
-            _log.info(f"Checking existence of {dataset_id}")
-            exists = table_exists(product_name, dataset_id, centre_time, output_directory)
-
+            _log.info(f"Checking existence of {task}")
+            exists = table_exists(
+                drill_name=drill_name, task_id_string=task, output_directory=output_directory
+            )
         if overwrite or not exists:
             try:
-                # Load the water body polygons for the region
-                polygons_vector_file = os.path.join(polygons_directory, f"{region_code}.parquet")
-                try:
-                    polygons_gdf = gpd.read_parquet(polygons_vector_file)
-                except Exception as error:
-                    _log.exception(f"Could not read file {polygons_vector_file}")
-                    raise error
-                else:
-                    # Guess the ID field.
-                    id_field = guess_id_field(polygons_gdf, use_id)
-                    _log.debug(f"Guessed ID field: {id_field}")
-
-                    # Set the ID field as the index.
-                    polygons_gdf.set_index(id_field, inplace=True)
-
-                # Perform the polygon drill on the dataset
+                # Perform the polygon drill.
                 table = drill(
                     plugin=plugin,
-                    polygons_gdf=polygons_gdf,
-                    reference_dataset=reference_dataset,
-                    partial=partial,
-                    overedge=overedge,
+                    task_id_string=task,
+                    cache=cache,
+                    polygons_rasters_directory=polygons_rasters_directory,
+                    polygon_ids_mapping=polygon_ids_mapping,
                     dc=dc,
                 )
 
-                # Write the table to a parquet file.
-                if (dump_empty_dataframe) or (not table.empty):
-                    pq_filename = write_table_to_parquet(
-                        drill_name=product_name,
-                        uuid=dataset_id,
-                        centre_date=centre_time,
-                        table=table,
-                        output_directory=output_directory,
-                    )
-                    if db:
-                        _log.info(f"Writing {pq_filename} to database")
-                        stack_waterbodies_parquet_to_db(
-                            parquet_file_paths=[pq_filename],
-                            verbose=verbose,
-                            engine=engine,
-                            drop=False,
-                        )
+                pq_file_name = write_table_to_parquet(  # noqa F841
+                    drill_name=drill_name,
+                    task_id_string=task,
+                    table=table,
+                    output_directory=output_directory,
+                )
             except KeyError as keyerr:
-                _log.exception(f"Found {dataset_id} has KeyError: {str(keyerr)}")
-                failed_dataset_ids.append(dataset_id)
+                _log.exception(f"Found task {task} has KeyError: {str(keyerr)}")
+                failed_tasks = [].append(task)
             except TypeError as typeerr:
-                _log.exception(f"Found {dataset_id} has TypeError: {str(typeerr)}")
-                failed_dataset_ids.append(dataset_id)
+                _log.exception(f"Found task {task} has TypeError: {str(typeerr)}")
+                failed_tasks.append(task)
             except RasterioIOError as ioerror:
-                _log.exception(f"Found {dataset_id} has RasterioIOError: {str(ioerror)}")
-                failed_dataset_ids.append(dataset_id)
+                _log.exception(f"Found task {task} has RasterioIOError: {str(ioerror)}")
+                failed_tasks.append(task)
             except ValueError as valueerror:
-                _log.exception(f"Found {dataset_id} has ValueError: {str(valueerror)}")
-                failed_dataset_ids.append(dataset_id)
+                _log.exception(f"Found task {task} has ValueError: {str(valueerror)}")
+                failed_tasks.append(task)
             else:
-                _log.info(f"{dataset_id} successful")
+                _log.info(f"Task {task} successful")
         else:
-            _log.info(f"{dataset_id} already exists, skipping")
+            _log.info(f"Drill outputs for {task} already exist, skipping")
 
-        if failed_dataset_ids:
+        if failed_tasks:
             # Write the failed dataset ids to a text file.
-            parent_folder, file_name = os.path.split(dataset_ids_file)
+            parent_folder, file_name = os.path.split(tasks_text_file)
             file, file_extension = os.path.splitext(file_name)
-            failed_datasets_text_file = os.path.join(
-                parent_folder, file + "_failed_dataset_ids" + file_extension
+            failed_tasks_text_file = os.path.join(
+                parent_folder, file + "_failed_tasks" + file_extension
             )
 
-            with fs.open(failed_datasets_text_file, "a") as file:
-                for dataset_id in failed_dataset_ids:
-                    file.write(f"{dataset_id}\n")
+            with fs.open(failed_tasks_text_file, "a") as file:
+                for task in failed_tasks:
+                    file.write(f"{task}\n")
 
-            _log.info(
-                f"Failed dataset IDs {failed_dataset_ids} written to: {failed_datasets_text_file}."
-            )
+            _log.info(f"Failed tasks {failed_tasks} written to: {failed_tasks_text_file}.")
