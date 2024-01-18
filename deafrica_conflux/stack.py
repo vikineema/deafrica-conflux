@@ -96,10 +96,10 @@ def stack_polygon_timeseries_to_csv(
     else:
         fs = fsspec.filesystem("file")
 
-    _log.info(f"Stacking timeseries for polygons: {', '.join(polygon_uids)}")
-
     if isinstance(polygon_uids, str):
         polygon_uids = [polygon_uids]
+
+    _log.info(f"Stacking timeseries for polygons: {', '.join(polygon_uids)}")
 
     # Find all the drill output files.
     drill_output_files = find_parquet_files(path=drill_output_directory, pattern=".*")
@@ -110,10 +110,7 @@ def stack_polygon_timeseries_to_csv(
         filtered_drill_output_files = [
             drill_output_file
             for drill_output_file in drill_output_files
-            if any(
-                tileid in drill_output_file
-                for tileid in polygon_stringids_to_tileids[poly_uid]
-            )
+            if any(tileid in drill_output_file for tileid in polygon_stringids_to_tileids[poly_uid])
         ]
         # Read the parquet files.
         df = pd.read_parquet(
