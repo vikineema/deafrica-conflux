@@ -103,10 +103,10 @@ def stack_polygon_timeseries_to_csv(
 
     output_file_paths = []
     for poly_uid in polygon_uids:
+        # Esatablish the pattern to search for
+        pattern = "|".join([f".*{i}.*" for i in polygon_stringids_to_tileids[poly_uid]])
         # Find the drill output files.
-        drill_output_files = find_parquet_files(
-            path=drill_output_directory, pattern=f".*{polygon_stringids_to_tileids[poly_uid]}.*"
-        )
+        drill_output_files = find_parquet_files(path=drill_output_directory, pattern=pattern)
 
         # Read the parquet files.
         df = pd.read_parquet(
