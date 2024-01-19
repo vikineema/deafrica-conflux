@@ -101,21 +101,17 @@ def stack_polygon_timeseries_to_csv(
 
     _log.info(f"Stacking timeseries for polygons: {', '.join(polygon_uids)}")
 
-    # Find all the drill output files.
-    drill_output_files = find_parquet_files(path=drill_output_directory, pattern=".*")
-
     output_file_paths = []
     for poly_uid in polygon_uids:
-        # Filter the drill output files.
-        filtered_drill_output_files = [
-            drill_output_file
-            for drill_output_file in drill_output_files
-            if any(tileid in drill_output_file for tileid in polygon_stringids_to_tileids[poly_uid])
-        ]
+        # Find the drill output files.
+        drill_output_files = find_parquet_files(
+            path=drill_output_directory, pattern=f".*{polygon_stringids_to_tileids[poly_uid]}.*"
+        )
+
         # Read the parquet files.
         df = pd.read_parquet(
-            [f.lstrip("s3://") for f in filtered_drill_output_files],
-            filesystem=pyarrow.fs.FileSystem.from_uri(filtered_drill_output_files[0])[0],
+            [f.lstrip("s3://") for f in drill_output_files],
+            filesystem=pyarrow.fs.FileSystem.from_uri(drill_output_files[0])[0],
         )
         # Get the timeseries for the specific polygon from the larger table.
         polygon_timeseries = update_timeseries(df.loc[poly_uid])
