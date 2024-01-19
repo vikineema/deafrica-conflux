@@ -6,7 +6,6 @@ import fsspec
 
 from deafrica_conflux.cli.logs import logging_setup
 from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3_uri
-from deafrica_conflux.queues import batch_messages
 from deafrica_conflux.stack import stack_polygon_timeseries_to_csv
 
 
@@ -37,7 +36,7 @@ def stack_from_json(
     verbose,
     drill_output_directory,
     output_directory,
-    polygon_ids_mapping_file,
+    polygon_numericids_to_stringids_file,
     polygon_stringids_to_tileids_file,
 ):
     """
