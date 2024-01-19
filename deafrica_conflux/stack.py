@@ -101,7 +101,7 @@ def stack_polygon_timeseries_to_csv(
 
     output_file_paths = []
     for idx, poly_uid in enumerate(polygon_uids):
-        _log.info(f"Stacking timeseries for polygon {poly_uid}: {id+1}/{len(polygon_uids)}")
+        _log.info(f"Stacking timeseries for polygon {poly_uid}: {idx +1}/{len(polygon_uids)}")
         # Esatablish the pattern to search for
         pattern = "|".join([f".*{i}.*" for i in polygon_stringids_to_tileids[poly_uid]])
         # Find the drill output files.
