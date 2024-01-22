@@ -102,15 +102,23 @@ def stack_polygon_timeseries_to_csv(
     if isinstance(polygon_uids, str):
         polygon_uids = [polygon_uids]
 
-    # Find the drill output files the drill output parquet files to tile ids.
+    # Find all the drill output files.
+    drill_output_files = find_parquet_files(
+        path=drill_output_directory, pattern=".*", verbose=False
+    )
+    _log.info(f"Found {len(drill_output_files)} drill output parquet files.")
+
+    # Map the drill output parquet files to tile ids.
     tileids_to_pqfiles = {}
     for tile_id in tqdm(
         iterable=set(itertools.chain.from_iterable(polygon_stringids_to_tileids.values())),
         desc="Mapping tile ids to drill output parquet files",
     ):
-        tile_parquet_files = find_parquet_files(
-            path=drill_output_directory, pattern=f".*{tile_id}.*", verbose=False
-        )
+        tile_parquet_files = [
+            drill_output_file
+            for drill_output_file in drill_output_files
+            if tile_id in drill_output_file
+        ]
         tileids_to_pqfiles[tile_id] = tile_parquet_files  # len(tile_parquet_files)
 
     # Map the drill output parquet files to polygon uids.
