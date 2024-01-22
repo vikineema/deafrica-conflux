@@ -7,6 +7,8 @@ Geoscience Australia
 2021
 """
 
+import collections
+import itertools
 import logging
 import os
 from pathlib import Path
@@ -17,6 +19,7 @@ import fsspec
 import numpy as np
 import pandas as pd
 import pyarrow.fs
+from tqdm import tqdm
 
 from deafrica_conflux.io import check_dir_exists, check_if_s3_uri, find_parquet_files
 
@@ -103,17 +106,40 @@ def stack_polygon_timeseries_to_csv(
     drill_output_files = find_parquet_files(
         path=drill_output_directory, pattern=".*", verbose=False
     )
+    _log.info(f"Found {len(drill_output_files)} drill output parquet files.")
+
+    # Map the drill output parquet files to tile ids.
+    tileids_to_pqfiles = {}
+    for tile_id in tqdm(
+        iterable=set(itertools.chain.from_iterable(polygon_stringids_to_tileids.values())),
+        desc="Mapping tile ids to drill output parquet files",
+    ):
+        tile_parquet_files = [
+            drill_output_file
+            for drill_output_file in drill_output_files
+            if tile_id in drill_output_file
+        ]
+        tileids_to_pqfiles[tile_id] = tile_parquet_files  # len(tile_parquet_files)
+
+    # Map the drill output parquet files to polygon uids.
+    polyuid_to_pqfiles = collections.defaultdict(list)
+    for poly_uid, tileids in tqdm(
+        polygon_stringids_to_tileids.items(),
+        desc="Mapping polygon UIDs to drill output parquet files",
+    ):
+        polyuid_to_pqfiles[poly_uid].extend(
+            list(
+                itertools.chain.from_iterable([tileids_to_pqfiles[tile_id] for tile_id in tileids])
+            )
+        )  # np.sum([tileids_to_pqfiles[i] for i in tileids])
 
     output_file_paths = []
     for idx, poly_uid in enumerate(polygon_uids):
         _log.info(f"Stacking timeseries for polygon {poly_uid}: {idx + 1}/{len(polygon_uids)}")
-        # Filter the drill output files.
-        filtered_drill_output_files = [
-            drill_output_file
-            for drill_output_file in drill_output_files
-            if any(tileid in drill_output_file for tileid in polygon_stringids_to_tileids[poly_uid])
-        ]
-        _log.info(f"Found {len(filtered_drill_output_files)} parquet files.")
+
+        filtered_drill_output_files = polyuid_to_pqfiles[poly_uid]
+        _log.info(f"Found {len(filtered_drill_output_files)} parquet files for polygon {poly_uid}.")
+
         # Read the parquet files.
         df = pd.read_parquet(
             [f.lstrip("s3://") for f in filtered_drill_output_files],
