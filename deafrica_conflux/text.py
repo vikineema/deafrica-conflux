@@ -48,7 +48,7 @@ def parse_tile_ids(file_path: str) -> str:
     return tile_id
 
 
-def task_id_to_string(task_id_tuple: tuple[str, int, int]) -> str:
+def task_id_tuple_to_string(task_id_tuple: tuple[str, int, int]) -> str:
     """
     Transform a task id tuple to a string.
 
@@ -69,7 +69,7 @@ def task_id_to_string(task_id_tuple: tuple[str, int, int]) -> str:
     return task_id_string
 
 
-def task_id_to_tuple(task_id_string: str) -> tuple[str, int, int]:
+def task_id_string_to_tuple(task_id_string: str) -> tuple[str, int, int]:
     """
     Transform a task id string to a tuple.
 
