@@ -17,7 +17,7 @@ from deafrica_conflux.io import (
     check_file_exists,
     check_if_s3_uri,
     table_exists,
-    write_table_to_parquet,
+    write_table_to_parquets,
 )
 from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
 from deafrica_conflux.queues import (
@@ -26,6 +26,7 @@ from deafrica_conflux.queues import (
     move_to_dead_letter_queue,
     receive_messages,
 )
+from deafrica_conflux.text import task_id_string_to_tuple
 
 
 @click.command(
@@ -170,8 +171,9 @@ def run_from_sqs_queue(
             message = retrieved_message[0]
 
             # Process the task.
-            task = message["Body"]
-            _log.info(f"Read task id {task} from queue {tasks_sqs_queue_url}")
+            task_id_string = message["Body"]
+            task_id_tuple = task_id_string_to_tuple(task_id_string)
+            _log.info(f"Read task id {task_id_string} from queue {tasks_sqs_queue_url}")
 
             entry_to_delete = [
                 {"Id": message["MessageId"], "ReceiptHandle": message["ReceiptHandle"]}
@@ -181,71 +183,83 @@ def run_from_sqs_queue(
             success_flag = True
 
             if not overwrite:
-                _log.info(f"Checking existence of {task}")
+                _log.info(f"Checking existence of {task_id_string}")
                 exists = table_exists(
-                    drill_name=drill_name, task_id_string=task, output_directory=output_directory
+                    drill_name=drill_name,
+                    task_id_tuple=task_id_tuple,
+                    output_directory=output_directory,
                 )
             if overwrite or not exists:
                 try:
                     # Perform the polygon drill.
                     table = drill(
                         plugin=plugin,
-                        task_id_string=task,
+                        task_id_tuple=task_id_tuple,
                         cache=cache,
                         polygons_rasters_directory=polygons_rasters_directory,
                         polygon_numericids_to_stringids=polygon_numericids_to_stringids,
                         dc=dc,
                     )
-                    pq_file_name = write_table_to_parquet(  # noqa F841
+                    pq_files = write_table_to_parquets(  # noqa F841
                         drill_name=drill_name,
-                        task_id_string=task,
+                        task_id_tuple=task_id_tuple,
                         table=table,
                         output_directory=output_directory,
                     )
                 except KeyError as keyerr:
-                    _log.exception(f"Found task {task} has KeyError: {str(keyerr)}")
-                    _log.error(f"Moving {task} to deadletter queue {dead_letter_queue_url}")
+                    _log.exception(f"Found task {task_id_string} has KeyError: {str(keyerr)}")
+                    _log.error(
+                        f"Moving {task_id_string} to deadletter queue {dead_letter_queue_url}"
+                    )
                     move_to_dead_letter_queue(
                         dead_letter_queue_url=dead_letter_queue_url,
-                        message_body=task,
+                        message_body=task_id_string,
                         sqs_client=sqs_client,
                     )
                     success_flag = False
                 except TypeError as typeerr:
-                    _log.exception(f"Found task {task} has TypeError: {str(typeerr)}")
-                    _log.error(f"Moving {task} to deadletter queue {dead_letter_queue_url}")
+                    _log.exception(f"Found task {task_id_string} has TypeError: {str(typeerr)}")
+                    _log.error(
+                        f"Moving {task_id_string} to deadletter queue {dead_letter_queue_url}"
+                    )
                     move_to_dead_letter_queue(
                         dead_letter_queue_url=dead_letter_queue_url,
-                        message_body=task,
+                        message_body=task_id_string,
                         sqs_client=sqs_client,
                     )
                     success_flag = False
                 except RasterioIOError as ioerror:
-                    _log.exception(f"Found task {task} has RasterioIOError: {str(ioerror)}")
-                    _log.error(f"Moving {task} to deadletter queue {dead_letter_queue_url}")
+                    _log.exception(
+                        f"Found task {task_id_string} has RasterioIOError: {str(ioerror)}"
+                    )
+                    _log.error(
+                        f"Moving {task_id_string} to deadletter queue {dead_letter_queue_url}"
+                    )
                     move_to_dead_letter_queue(
                         dead_letter_queue_url=dead_letter_queue_url,
-                        message_body=task,
+                        message_body=task_id_string,
                         sqs_client=sqs_client,
                     )
                     success_flag = False
                 except ValueError as valueerror:
-                    _log.exception(f"Found task {task} has ValueError: {str(valueerror)}")
-                    _log.error(f"Moving {task} to deadletter queue {dead_letter_queue_url}")
+                    _log.exception(f"Found task {task_id_string} has ValueError: {str(valueerror)}")
+                    _log.error(
+                        f"Moving {task_id_string} to deadletter queue {dead_letter_queue_url}"
+                    )
                     move_to_dead_letter_queue(
                         dead_letter_queue_url=dead_letter_queue_url,
-                        message_body=task,
+                        message_body=task_id_string,
                         sqs_client=sqs_client,
                     )
                     success_flag = False
             else:
-                _log.info(f"Task {task} already exists, skipping")
+                _log.info(f"Task {task_id_string} already exists, skipping")
 
             if success_flag:
-                _log.info(f"Successful, deleting {task} from {tasks_sqs_queue_url}")
+                _log.info(f"Successful, deleting {task_id_string} from {tasks_sqs_queue_url}")
             else:
                 _log.info(
-                    f"Not successful, moved {task} to dead letter queue {dead_letter_queue_url} and deleting from {tasks_sqs_queue_url}"
+                    f"Not successful, moved {task_id_string} to dead letter queue {dead_letter_queue_url} and deleting from {tasks_sqs_queue_url}"
                 )
 
             (
@@ -258,7 +272,7 @@ def run_from_sqs_queue(
                 sqs_client=sqs_client,
             )
             if failed_to_delete:
-                _log.error(f"Failed to delete {task} from queue {tasks_sqs_queue_url}")
+                _log.error(f"Failed to delete {task_id_string} from queue {tasks_sqs_queue_url}")
                 # raise RuntimeError(f"Failed to delete task: {task}")
             else:
-                _log.info(f"Deleted task {task} from queue")
+                _log.info(f"Deleted task {task_id_string} from queue")

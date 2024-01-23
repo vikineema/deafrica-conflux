@@ -38,7 +38,7 @@ def table_exists(
     drill_name: str, task_id_tuple: tuple[str, int, int], output_directory: str
 ) -> bool:
     """
-    Check whether tables for a specific task exist.
+    Check whether drill output parquet files for a specific task exist.
 
     Arguments
     ---------
