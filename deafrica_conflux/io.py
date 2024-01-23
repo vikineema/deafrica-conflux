@@ -8,7 +8,6 @@ import json
 import logging
 import os
 import re
-import time
 import urllib
 from pathlib import Path
 
@@ -17,8 +16,6 @@ import numpy as np
 import pandas as pd
 import pyarrow
 import pyarrow.parquet
-
-from deafrica_conflux.text import make_parquet_file_name
 
 _log = logging.getLogger(__name__)
 
@@ -35,16 +32,18 @@ GEOTIFF_EXTENSIONS = {".tif", ".tiff", ".gtiff"}
 PARQUET_META_KEY = b"conflux.metadata"
 
 
-def table_exists(drill_name: str, task_id_string: str, output_directory: str) -> bool:
+def table_exists(
+    drill_name: str, task_id_tuple: tuple[str, int, int], output_directory: str
+) -> bool:
     """
-    Check whether tables for  a specific task exist.
+    Check whether tables for a specific task exist.
 
     Arguments
     ---------
     drill_name : str
         Name of the drill.
 
-    task_id_string : str
+    task_id_tuple: tuple[str, int, int]
         Task ID of the task.
 
     output_directory : str
@@ -58,22 +57,23 @@ def table_exists(drill_name: str, task_id_string: str, output_directory: str) ->
     output_directory = str(output_directory)
 
     # Parse the task id.
-    period, x, y = task_id_string.split("/")
+    period, x, y = task_id_tuple
 
-    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
-    file_path = os.path.join(output_directory, period, file_name)
+    # Check if the parent directory exists.
+    parent_folder = os.path.join(output_directory, f"x{x:03d}", f"y{y:03d}", period)
 
-    if check_if_s3_uri(file_path):
-        fs = fsspec.filesystem("s3")
+    if not check_dir_exists(parent_folder):
+        return False
     else:
-        fs = fsspec.filesystem("file")
-
-    if fs.exists(file_path):
-        _log.info(f"{file_path} exists.")
-    else:
-        _log.info(f"{file_path} does not exist.")
-
-    return fs.exists(file_path)
+        found_pq_files = find_parquet_files(
+            path=parent_folder,
+            pattern=f".*{drill_name}_x{x:03d}_y{y:03d}_{period}.*",
+            verbose=False,
+        )
+        if found_pq_files:
+            return True
+        else:
+            return False
 
 
 def write_table_to_parquets(
