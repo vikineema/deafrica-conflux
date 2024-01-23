@@ -17,7 +17,7 @@ from odc.dscache import DatasetCache
 from skimage.measure import regionprops
 
 from deafrica_conflux.io import find_geotiff_files
-from deafrica_conflux.text import task_id_to_tuple
+from deafrica_conflux.text import task_id_string_to_tuple
 
 _log = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ def drill(
     _log.debug(f"Found grid {grid}")
 
     # Parse the task id tuple from the task string.
-    task_id_tuple = task_id_to_tuple(task_id_string)
+    task_id_tuple = task_id_string_to_tuple(task_id_string)
 
     # Find the polygons raster tile to use for the task.
     _log.info("Finding polygon raster tile....")
