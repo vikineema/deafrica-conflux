@@ -24,7 +24,7 @@ _log = logging.getLogger(__name__)
 
 def drill(
     plugin: ModuleType,
-    task_id_string: str,
+    task_id_tuple: tuple[str, int, int],
     cache: DatasetCache,
     polygons_rasters_directory: str,
     polygon_numericids_to_stringids: dict = {},
@@ -37,8 +37,8 @@ def drill(
     ----------
     plugin : ModuleType
         A validated plugin to drill with.
-    task_id_string : str
-        Task id to run drill on in string format.
+    task_id_tuple : tuple[str, int, int]
+        Task id to run drill on in tuple format.
     cache : DatasetCache
         Dataset cache to read datasets from.
     polygons_rasters_directory : str
@@ -72,9 +72,6 @@ def drill(
     # Get the gridspec/grid name from the cache.
     grid = cache.get_info_dict("stats/config")["grid"]
     _log.debug(f"Found grid {grid}")
-
-    # Parse the task id tuple from the task string.
-    task_id_tuple = task_id_string_to_tuple(task_id_string)
 
     # Find the polygons raster tile to use for the task.
     _log.info("Finding polygon raster tile....")
