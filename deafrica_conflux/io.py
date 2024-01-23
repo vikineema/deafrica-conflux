@@ -17,6 +17,8 @@ import pandas as pd
 import pyarrow
 import pyarrow.parquet
 
+from deafrica_conflux.text import task_id_tuple_to_string
+
 _log = logging.getLogger(__name__)
 
 # File extensions to recognise as Parquet files.
@@ -63,6 +65,9 @@ def table_exists(
     parent_folder = os.path.join(output_directory, f"x{x:03d}", f"y{y:03d}", period)
 
     if not check_dir_exists(parent_folder):
+        _log.info(
+            f"Outputs for task {task_id_tuple_to_string(task_id_tuple)} exist in {output_directory}."
+        )
         return False
     else:
         found_pq_files = find_parquet_files(
@@ -71,8 +76,14 @@ def table_exists(
             verbose=False,
         )
         if found_pq_files:
+            _log.info(
+                f"Outputs for task {task_id_tuple_to_string(task_id_tuple)} do not exist in {output_directory}."
+            )
             return True
         else:
+            _log.info(
+                f"Outputs for task {task_id_tuple_to_string(task_id_tuple)} exist in {output_directory}."
+            )
             return False
 
 
