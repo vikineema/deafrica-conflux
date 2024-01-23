@@ -13,6 +13,7 @@ import urllib
 from pathlib import Path
 
 import fsspec
+import numpy as np
 import pandas as pd
 import pyarrow
 import pyarrow.parquet
@@ -75,21 +76,21 @@ def table_exists(drill_name: str, task_id_string: str, output_directory: str) ->
     return fs.exists(file_path)
 
 
-def write_table_to_parquet(
+def write_table_to_parquets(
     drill_name: str,
-    task_id_string: str,
+    task_id_tuple: tuple[str, int, int],
     table: pd.DataFrame,
     output_directory: str | Path,
 ) -> list[str]:
     """
-    Write a table to Parquet.
+    Write a table to Parquet files for each polygon.
 
     Arguments
     ---------
     drill_name : str
         Name of the drill.
 
-    task_id_string : str
+    task_id_tuple: tuple[str, int, int]
         Task ID of the task.
 
     table : pd.DataFrame
@@ -107,7 +108,7 @@ def write_table_to_parquet(
     output_directory = str(output_directory)
 
     # Parse the task id.
-    period, x, y = task_id_string.split("/")
+    period, x, y = task_id_tuple
 
     is_s3 = check_if_s3_uri(output_directory)
     if is_s3:
@@ -115,43 +116,26 @@ def write_table_to_parquet(
     else:
         fs = fsspec.filesystem("file")
 
-    table["date"] = pd.to_datetime(period)
-
-    # Write the table.
-    file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
-
     # Check if the parent folder exists.
-    parent_folder = os.path.join(output_directory, period)
+    parent_folder = os.path.join(output_directory, f"x{x:03d}", f"y{y:03d}", period)
     if not check_dir_exists(parent_folder):
         fs.makedirs(parent_folder, exist_ok=True)
         _log.info(f"Created directory: {parent_folder}")
 
-    output_file_path = os.path.join(parent_folder, file_name)
+    table["date"] = pd.to_datetime(period)
+    tables = np.array_split(table, len(table))
 
-    if is_s3:
-        # To get around the SlowDown ("Please reduce your request rate.") error
-        # when writing to s3.
-        max_retries = 5
-        time_delay = 1
-        for attempt in range(max_retries):
-            try:
-                table.to_parquet(output_file_path)
-            except Exception as error:
-                _log.info(f"Attempt {attempt+1} to write table to {output_file_path} failed!")
-                _log.error(error)
-                if attempt + 1 != max_retries:
-                    _log.info(f"Waiting {time_delay} seconds before next attempt.")
-                    time.sleep(time_delay)
-                    continue
-                else:
-                    raise error
-            else:
-                break
-    else:
-        table.to_parquet(output_file_path)
+    output_file_paths = []
+    for table_ in tables:
+        file_name = os.path.join(
+            f"{drill_name}_x{x:03d}_y{y:03d}_{period}_{table_.index.item()}.pq"
+        )
+        output_file_path = os.path.join(parent_folder, file_name)
+        table_.to_parquet(output_file_path)
+        _log.info(f"Table written to {output_file_path}")
+        output_file_paths.append(output_file_path)
 
-    _log.info(f"Table written to {output_file_path}")
-    return output_file_path
+    return output_file_paths
 
 
 def read_table_from_parquet(path: str | Path) -> pd.DataFrame:

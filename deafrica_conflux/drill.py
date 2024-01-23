@@ -17,7 +17,6 @@ from odc.dscache import DatasetCache
 from skimage.measure import regionprops
 
 from deafrica_conflux.io import find_geotiff_files
-from deafrica_conflux.text import task_id_string_to_tuple
 
 _log = logging.getLogger(__name__)
 
