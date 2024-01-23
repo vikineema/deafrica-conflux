@@ -17,10 +17,9 @@ from deafrica_conflux.io import (
     check_file_exists,
     check_if_s3_uri,
     table_exists,
-    write_table_to_parquets,
+    write_table_to_parquet,
 )
 from deafrica_conflux.plugins.utils import run_plugin, validate_plugin
-from deafrica_conflux.text import task_id_string_to_tuple
 
 
 @click.command(
@@ -152,53 +151,48 @@ def run_from_txt(
     cache = dscache.open_ro(cachedb_file_path)
 
     failed_tasks = []
-    for i, task_id_string in enumerate(tasks):
-        _log.info(f"Processing task {task_id_string} ({i + 1}/{len(tasks)})")
-
-        task_id_tuple = task_id_string_to_tuple(task_id_string)
+    for i, task in enumerate(tasks):
+        _log.info(f"Processing task {task} ({i + 1}/{len(tasks)})")
 
         if not overwrite:
-            _log.info(f"Checking existence of {task_id_string}")
+            _log.info(f"Checking existence of {task}")
             exists = table_exists(
-                drill_name=drill_name,
-                task_id_tuple=task_id_tuple,
-                output_directory=output_directory,
+                drill_name=drill_name, task_id_string=task, output_directory=output_directory
             )
-
         if overwrite or not exists:
             try:
                 # Perform the polygon drill.
                 table = drill(
                     plugin=plugin,
-                    task_id_tuple=task_id_tuple,
+                    task_id_string=task,
                     cache=cache,
                     polygons_rasters_directory=polygons_rasters_directory,
                     polygon_numericids_to_stringids=polygon_numericids_to_stringids,
                     dc=dc,
                 )
 
-                pq_files = write_table_to_parquets(  # noqa F841
+                pq_file_name = write_table_to_parquet(  # noqa F841
                     drill_name=drill_name,
-                    task_id_tuple=task_id_tuple,
+                    task_id_string=task,
                     table=table,
                     output_directory=output_directory,
                 )
             except KeyError as keyerr:
-                _log.exception(f"Found task {task_id_string} has KeyError: {str(keyerr)}")
-                failed_tasks = [].append(task_id_string)
+                _log.exception(f"Found task {task} has KeyError: {str(keyerr)}")
+                failed_tasks = [].append(task)
             except TypeError as typeerr:
-                _log.exception(f"Found task {task_id_string} has TypeError: {str(typeerr)}")
-                failed_tasks.append(task_id_string)
+                _log.exception(f"Found task {task} has TypeError: {str(typeerr)}")
+                failed_tasks.append(task)
             except RasterioIOError as ioerror:
-                _log.exception(f"Found task {task_id_string} has RasterioIOError: {str(ioerror)}")
-                failed_tasks.append(task_id_string)
+                _log.exception(f"Found task {task} has RasterioIOError: {str(ioerror)}")
+                failed_tasks.append(task)
             except ValueError as valueerror:
-                _log.exception(f"Found task {task_id_string} has ValueError: {str(valueerror)}")
-                failed_tasks.append(task_id_string)
+                _log.exception(f"Found task {task} has ValueError: {str(valueerror)}")
+                failed_tasks.append(task)
             else:
-                _log.info(f"Task {task_id_string} successful")
+                _log.info(f"Task {task} successful")
         else:
-            _log.info(f"Drill outputs for {task_id_string} already exist, skipping")
+            _log.info(f"Drill outputs for {task} already exist, skipping")
 
         if failed_tasks:
             # Write the failed dataset ids to a text file.

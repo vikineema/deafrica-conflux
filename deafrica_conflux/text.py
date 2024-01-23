@@ -48,13 +48,13 @@ def parse_tile_ids(file_path: str) -> str:
     return tile_id
 
 
-def task_id_tuple_to_string(task_id_tuple: tuple[str, int, int]) -> str:
+def task_id_to_string(task_id_tuple: tuple) -> str:
     """
     Transform a task id tuple to a string.
 
     Parameters
     ----------
-    task_id_tuple : tuple[str, int, int]
+    task_id_tuple : tuple
         Task id as a tuple.
 
     Returns
@@ -69,7 +69,7 @@ def task_id_tuple_to_string(task_id_tuple: tuple[str, int, int]) -> str:
     return task_id_string
 
 
-def task_id_string_to_tuple(task_id_string: str) -> tuple[str, int, int]:
+def task_id_to_tuple(task_id_string: str) -> tuple:
     """
     Transform a task id string to a tuple.
 
@@ -80,12 +80,15 @@ def task_id_string_to_tuple(task_id_string: str) -> tuple[str, int, int]:
 
     Returns
     -------
-    tuple[str, int, int]
+    tuple
         Task id as a tuple.
     """
     sep = "/" if "/" in task_id_string else ","
 
     period, x, y = task_id_string.split(sep)
+
+    if period.startswith("x"):
+        period, x, y = y, period, x
 
     x = int(x)
     y = int(y)

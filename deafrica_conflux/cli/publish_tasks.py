@@ -11,7 +11,7 @@ from deafrica_conflux.cli.common import MutuallyExclusiveOption
 from deafrica_conflux.cli.logs import logging_setup
 from deafrica_conflux.io import check_file_exists, check_if_s3_uri
 from deafrica_conflux.queues import get_queue_url, purge_queue, send_batch_with_retry
-from deafrica_conflux.text import task_id_tuple_to_string
+from deafrica_conflux.text import task_id_to_string
 
 
 @click.command(
@@ -103,7 +103,7 @@ def publish_tasks(
         tasks = parse_all_tasks(task_filter, all_tasks)
         _log.info(f"Found {len(tasks):,d} tasks after filtering using filter {task_filter}")
 
-    tasks_str = [task_id_tuple_to_string(tidx) for tidx in tasks]
+    tasks_str = [task_id_to_string(tidx) for tidx in tasks]
 
     if tasks_sqs_queue:
         sqs_client = boto3.client("sqs")
