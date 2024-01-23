@@ -66,7 +66,7 @@ def table_exists(
 
     if not check_dir_exists(parent_folder):
         _log.info(
-            f"Outputs for task {task_id_tuple_to_string(task_id_tuple)} exist in {output_directory}."
+            f"Outputs for task {task_id_tuple_to_string(task_id_tuple)} EXIST in {output_directory}."
         )
         return False
     else:
@@ -77,12 +77,12 @@ def table_exists(
         )
         if found_pq_files:
             _log.info(
-                f"Outputs for task {task_id_tuple_to_string(task_id_tuple)} do not exist in {output_directory}."
+                f"Outputs for task {task_id_tuple_to_string(task_id_tuple)} DO NOT EXIST in {output_directory}."
             )
             return True
         else:
             _log.info(
-                f"Outputs for task {task_id_tuple_to_string(task_id_tuple)} exist in {output_directory}."
+                f"Outputs for task {task_id_tuple_to_string(task_id_tuple)} EXIST in {output_directory}."
             )
             return False
 
