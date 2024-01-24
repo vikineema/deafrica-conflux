@@ -9,7 +9,7 @@ from deafrica_conflux.io import check_dir_exists, check_file_exists, check_if_s3
 from deafrica_conflux.stack import stack_polygon_timeseries_to_csv
 
 
-@click.command("stack-from-json", no_args_is_help=True)
+@click.command("stack-from-uid", no_args_is_help=True)
 @click.option("-v", "--verbose", default=1, count=True)
 @click.option(
     "--drill-output-directory",
@@ -23,26 +23,26 @@ from deafrica_conflux.stack import stack_polygon_timeseries_to_csv
     help="Output directory for waterbodies-style stack",
 )
 @click.option(
-    "--polygon-numericids-to-stringids-file",
+    "--polygon-uids",
     type=str,
-    help="JSON file mapping numeric polygons ids (WB_ID) to string polygons ids (UID).",
+    help="Polygon ids (UID) to stack timeseries for. To specify multiple polygons seperate polygon ids using a comma ",
 )
 @click.option(
     "--polygon-stringids-to-tileids-file",
     type=str,
-    help="JSON file mapping numeric polygons ids (WB_ID) to string polygons ids (UID).",
+    help="JSON file mapping string polygons ids (UID) to the idsof the grids/tiles the polygon intersects with.",
 )
-def stack_from_json(
+def stack_from_uid(
     verbose,
     drill_output_directory,
     output_directory,
-    polygon_numericids_to_stringids_file,
+    polygon_uids,
     polygon_stringids_to_tileids_file,
 ):
     """
     \b
     Stack outputs of deafrica-conflux into csv formats
-    using polygon ids from a JSON file.
+    using polygon ids.
     """
     # Set up logger.
     logging_setup(verbose)
@@ -51,7 +51,6 @@ def stack_from_json(
     # Support pathlib Paths
     output_directory = str(output_directory)
     drill_output_directory = str(drill_output_directory)
-    polygon_numericids_to_stringids_file = str(polygon_numericids_to_stringids_file)
     polygon_stringids_to_tileids_file = str(polygon_stringids_to_tileids_file)
 
     if not check_dir_exists(drill_output_directory):
@@ -66,23 +65,9 @@ def stack_from_json(
             fsspec.filesystem("file").makedirs(output_directory, exist_ok=True)
         _log.info(f"Created directory {output_directory}")
 
-    if not check_file_exists(polygon_numericids_to_stringids_file):
-        _log.error(f"File {polygon_numericids_to_stringids_file} does not exist!")
-        raise FileNotFoundError(f"File {polygon_numericids_to_stringids_file} does not exist!)")
-
     if not check_file_exists(polygon_stringids_to_tileids_file):
         _log.error(f"File {polygon_stringids_to_tileids_file} does not exist!")
         raise FileNotFoundError(f"File {polygon_stringids_to_tileids_file} does not exist!)")
-
-    if check_if_s3_uri(polygon_numericids_to_stringids_file):
-        fs = fsspec.filesystem("s3")
-    else:
-        fs = fsspec.filesystem("file")
-
-    with fs.open(polygon_numericids_to_stringids_file) as f:
-        polygon_numericids_to_stringids = json.load(f)
-
-    polygon_uids = list(polygon_numericids_to_stringids.values())
 
     if check_if_s3_uri(polygon_stringids_to_tileids_file):
         fs = fsspec.filesystem("s3")
@@ -92,9 +77,13 @@ def stack_from_json(
     with fs.open(polygon_stringids_to_tileids_file) as f:
         polygon_stringids_to_tileids = json.load(f)
 
-    stack_polygon_timeseries_to_csv(
-        polygon_uids=polygon_uids,
-        polygon_stringids_to_tileids=polygon_stringids_to_tileids,
-        drill_output_directory=drill_output_directory,
-        output_directory=output_directory,
-    )
+    polygon_uids = polygon_uids.split(",")
+    polygon_uids = [i.strip() for i in polygon_uids]
+
+    for polygon_uid in polygon_uids:
+        stack_polygon_timeseries_to_csv(
+            polygon_uid=polygon_uid,
+            polygon_stringids_to_tileids=polygon_stringids_to_tileids,
+            drill_output_directory=drill_output_directory,
+            output_directory=output_directory,
+        )
