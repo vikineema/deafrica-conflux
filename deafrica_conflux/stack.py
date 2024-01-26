@@ -17,6 +17,7 @@ import fsspec
 import numpy as np
 import pandas as pd
 import pyarrow.fs
+from memory_profiler import profile
 
 from deafrica_conflux.io import check_dir_exists, check_if_s3_uri, find_parquet_files
 
@@ -59,6 +60,7 @@ def update_timeseries(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+@profile
 def stack_polygon_timeseries_to_csv(
     polygon_uid: str,
     polygon_stringids_to_tileids: dict[str, list[str]],
