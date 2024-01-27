@@ -335,10 +335,10 @@ def find_parquet_files(path: str | Path, pattern: str = ".*", verbose: bool = Tr
             if file_extension not in PARQUET_EXTENSIONS:
                 continue
             else:
-                if not pattern.match(os.path.join(root, file)):
+                if not pattern.match(file):
                     continue
                 else:
-                    pq_file_paths.append(file)
+                    pq_file_paths.append(os.path.join(root, file))
 
     if check_if_s3_uri(path):
         pq_file_paths = [f"s3://{file}" for file in pq_file_paths]
