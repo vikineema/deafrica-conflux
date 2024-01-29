@@ -227,7 +227,7 @@ def stack_polygon_timeseries_to_csv(
             else:
                 if check_file_exists(output_file_path):
                     with fs.open(output_file_path, "a") as f:
-                        polygon_timeseries.to_csv(f, mode="a", index=False, header=False)
+                        polygon_timeseries.to_csv(f, mode="a", index_label="date", header=False)
                 else:
                     with fs.open(output_file_path, mode="w") as f:
                         polygon_timeseries.to_csv(f, mode="w", index_label="date")
