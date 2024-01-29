@@ -60,7 +60,7 @@ def table_exists(drill_name: str, task_id_string: str, output_directory: str) ->
     period, x, y = task_id_string.split("/")
 
     file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
-    file_path = os.path.join(output_directory, period, file_name)
+    file_path = os.path.join(output_directory, f"x{x}", f"y{y}", file_name)
 
     if check_if_s3_uri(file_path):
         fs = fsspec.filesystem("s3")
@@ -121,7 +121,7 @@ def write_table_to_parquet(
     file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
 
     # Check if the parent folder exists.
-    parent_folder = os.path.join(output_directory, period)
+    parent_folder = os.path.join(output_directory, f"x{x}", f"y{y}")
     if not check_dir_exists(parent_folder):
         fs.makedirs(parent_folder, exist_ok=True)
         _log.info(f"Created directory: {parent_folder}")
