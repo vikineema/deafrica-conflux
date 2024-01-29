@@ -21,7 +21,12 @@ import pandas as pd
 import pyarrow.fs
 from odc.stats.model import DateTimeRange
 
-from deafrica_conflux.io import check_dir_exists, check_if_s3_uri, find_parquet_files
+from deafrica_conflux.io import (
+    check_dir_exists,
+    check_file_exists,
+    check_if_s3_uri,
+    find_parquet_files,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -131,6 +136,7 @@ def stack_polygon_timeseries_to_csv(
     drill_output_directory: str | Path,
     output_directory: str | Path,
     temporal_range: None | str = None,
+    overwrite: bool = True,
 ) -> list[str]:
     """
     Stack the timeseries for a polygon from the drill output parquet files
@@ -151,6 +157,11 @@ def stack_polygon_timeseries_to_csv(
         Limit the timeseries for a polygon to only a specific time range.
         e.g. 2023-01--P1M stacks the polygon timeseries for the date
         range 2023-01-01 to 2023-01-31.
+    overwrite: bool = True
+        If `overwrite==True` then overwrite the existing csv containing the timeseries for a polygon.
+        If `overwrite==False` append the polygon's timeseries to the existing csv.
+        Best used when stacking the timeseries for a specific temporal range.
+
     Returns
     -------
     str
@@ -210,8 +221,16 @@ def stack_polygon_timeseries_to_csv(
                 fs.mkdirs(output_file_parent_directory, exist_ok=True)
                 _log.info(f"Created directory: {output_file_parent_directory}")
 
-            with fs.open(output_file_path, "w") as f:
-                polygon_timeseries.to_csv(f, index_label="date")
+            if overwrite:
+                with fs.open(output_file_path, mode="w") as f:
+                    polygon_timeseries.to_csv(f, mode="w", index_label="date")
+            else:
+                if check_file_exists(output_file_path):
+                    with fs.open(output_file_path, "a") as f:
+                        polygon_timeseries.to_csv(f, mode="a", index=False, header=False)
+                else:
+                    with fs.open(output_file_path, mode="w") as f:
+                        polygon_timeseries.to_csv(f, mode="w", index_label="date")
 
             _log.info(f"CSV file written to {output_file_path}")
 
