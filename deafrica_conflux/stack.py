@@ -109,8 +109,8 @@ def filter_files_by_date_range(file_paths: list[str], temporal_range: str) -> li
         List of files within the defined temporal range.
     """
     temporal_range_ = DateTimeRange(temporal_range)
-    start_date = DateTimeRange(temporal_range_).start
-    end_date = DateTimeRange(temporal_range_).end
+    start_date = temporal_range_.start
+    end_date = temporal_range_.end
 
     # Filter files based on the dates extracted from filenames
     filtered_file_paths = []
