@@ -32,12 +32,28 @@ from deafrica_conflux.stack import stack_polygon_timeseries_to_csv
     type=str,
     help="JSON file mapping string polygons ids (UID) to the idsof the grids/tiles the polygon intersects with.",
 )
+@click.option(
+    "--temporal-range",
+    type=str,
+    default=None,
+    help=(
+        "Only stack the timeseries for a polygon for a given time range,"
+        "Example '2020-05--P1M' month of May 2020"
+    ),
+)
+@click.option(
+    "--overwrite/--no-overwrite",
+    default=True,
+    help="Overwrite the existing csv containing the timeseries for a polygon.",
+)
 def stack_from_uid(
     verbose,
     drill_output_directory,
     output_directory,
     polygon_uids,
     polygon_stringids_to_tileids_file,
+    temporal_range,
+    overwrite,
 ):
     """
     \b
@@ -86,4 +102,6 @@ def stack_from_uid(
             polygon_stringids_to_tileids=polygon_stringids_to_tileids,
             drill_output_directory=drill_output_directory,
             output_directory=output_directory,
+            temporal_range=temporal_range,
+            overwrite=overwrite,
         )
