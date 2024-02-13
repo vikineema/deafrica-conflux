@@ -60,7 +60,7 @@ def table_exists(drill_name: str, task_id_string: str, output_directory: str) ->
     period, x, y = task_id_string.split("/")
 
     file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
-    file_path = os.path.join(output_directory, period, file_name)
+    file_path = os.path.join(output_directory, f"x{x}", f"y{y}", file_name)
 
     if check_if_s3_uri(file_path):
         fs = fsspec.filesystem("s3")
@@ -121,7 +121,7 @@ def write_table_to_parquet(
     file_name = make_parquet_file_name(drill_name=drill_name, task_id_string=task_id_string)
 
     # Check if the parent folder exists.
-    parent_folder = os.path.join(output_directory, period)
+    parent_folder = os.path.join(output_directory, f"x{x}", f"y{y}")
     if not check_dir_exists(parent_folder):
         fs.makedirs(parent_folder, exist_ok=True)
         _log.info(f"Created directory: {parent_folder}")
@@ -329,17 +329,16 @@ def find_parquet_files(path: str | Path, pattern: str = ".*", verbose: bool = Tr
 
     pq_file_paths = []
 
-    files = file_system.find(path)
-    for file in files:
-        _, file_extension = os.path.splitext(file)
-        if file_extension not in PARQUET_EXTENSIONS:
-            continue
-        else:
-            _, file_name = os.path.split(file)
-            if not pattern.match(file_name):
+    for root, dirs, files in file_system.walk(path):
+        for file in files:
+            _, file_extension = os.path.splitext(file)
+            if file_extension not in PARQUET_EXTENSIONS:
                 continue
             else:
-                pq_file_paths.append(file)
+                if not pattern.match(file):
+                    continue
+                else:
+                    pq_file_paths.append(os.path.join(root, file))
 
     if check_if_s3_uri(path):
         pq_file_paths = [f"s3://{file}" for file in pq_file_paths]
@@ -382,17 +381,16 @@ def find_csv_files(path: str | Path, pattern: str = ".*", verbose: bool = True) 
 
     csv_file_paths = []
 
-    files = file_system.find(path)
-    for file in files:
-        _, file_extension = os.path.splitext(file)
-        if file_extension not in CSV_EXTENSIONS:
-            continue
-        else:
-            _, file_name = os.path.split(file)
-            if not pattern.match(file_name):
+    for root, dirs, files in file_system.walk(path):
+        for file in files:
+            _, file_extension = os.path.splitext(file)
+            if file_extension not in CSV_EXTENSIONS:
                 continue
             else:
-                csv_file_paths.append(file)
+                if not pattern.match(file):
+                    continue
+                else:
+                    csv_file_paths.append(os.path.join(root, file))
 
     if check_if_s3_uri(path):
         csv_file_paths = [f"s3://{file}" for file in csv_file_paths]
@@ -436,18 +434,17 @@ def find_geotiff_files(path: str | Path, pattern: str = ".*", verbose: bool = Tr
 
     geotiff_file_paths = []
 
-    files = file_system.find(path)
-    for file in files:
-        _, file_extension = os.path.splitext(file)
-        file_extension = file_extension.lower()
-        if file_extension not in GEOTIFF_EXTENSIONS:
-            continue
-        else:
-            _, file_name = os.path.split(file)
-            if not pattern.match(file_name):
+    for root, dirs, files in file_system.walk(path):
+        for file in files:
+            _, file_extension = os.path.splitext(file)
+            file_extension = file_extension.lower()
+            if file_extension not in GEOTIFF_EXTENSIONS:
                 continue
             else:
-                geotiff_file_paths.append(file)
+                if not pattern.match(file):
+                    continue
+                else:
+                    geotiff_file_paths.append(os.path.join(root, file))
 
     if check_if_s3_uri(path):
         geotiff_file_paths = [f"s3://{file}" for file in geotiff_file_paths]
